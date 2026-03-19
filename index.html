@@ -104,17 +104,8 @@ const PLAYER_PHOTOS={
 };
 
 const ADMIN_HASH='240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9';
-const POLL_KEY='icc_polls_v6';
-const VOTED_KEY='icc_voted_v6';
-const STARTED_KEY='icc_started';
-const PAUSED_KEY='icc_paused';
-const ELAPSED_KEY='icc_elapsed';
-const STARTED_AT_KEY='icc_startedAt';
-const ELAPSED_TS_KEY='icc_elapsed_saved_at';
-const SEMIS_KEY='icc_semis';
-const FINAL_GAMES_KEY='icc_finalGames';
-const FINAL_STARTED_KEY='icc_finalStarted';
-const FINAL_PAUSED_KEY='icc_finalPaused';
+const DEVICE_KEY='icc_viewer_id';
+const STATE_ROW_ID='main';
 const TOURNAMENT_MIN_START_ISO='2026-01-01T00:00:00Z';
 const SCORES=['3-0','3-1','2.5-1.5','2-2','1.5-2.5','1-3','0-3'];
 const gCache={};
@@ -124,26 +115,90 @@ const INIT=()=>([
    team1:{name:'Team Tetrix',  color:'#0077CC',emoji:'⚡'},
    team2:{name:'Team Elfirouj',color:'#CC2244',emoji:'🔴'},
    boards:[
-     {n:1,p1:'Leadersnas',    p2:'Trankil225',   games:[],scheduledAt:null},
-     {n:2,p1:'Ange_Desire',   p2:'Chef-bio',      games:[],scheduledAt:null},
-     {n:3,p1:'Ndjably31',     p2:'DrBlitzkill',   games:[],scheduledAt:null},
-     {n:4,p1:'Red_Tetrix',    p2:'Elfirouj225',   games:[],scheduledAt:null},
+     {n:1,p1:'Leadersnas',    p2:'Trankil225',   games:[],scheduledAt:null,paused:false},
+     {n:2,p1:'Ange_Desire',   p2:'Chef-bio',      games:[],scheduledAt:null,paused:false},
+     {n:3,p1:'Ndjably31',     p2:'DrBlitzkill',   games:[],scheduledAt:null,paused:false},
+     {n:4,p1:'Red_Tetrix',    p2:'Elfirouj225',   games:[],scheduledAt:null,paused:false},
    ]},
   {id:1,title:'2ème Demi-Finale',
    team1:{name:'Team Olivier',color:'#CC7700',emoji:'🦁'},
    team2:{name:'Team Yoann',  color:'#1A7A3C',emoji:'🌿'},
    boards:[
-     {n:1,p1:'Novadanieldemon',p2:'Yaniss_ard',   games:[],scheduledAt:null},
-     {n:2,p1:'Sernser',        p2:'Baymanchess07', games:[],scheduledAt:null},
-     {n:3,p1:'MatmasterN1',    p2:'Dahmer225',     games:[],scheduledAt:null},
-     {n:4,p1:'Ivoirechess',    p2:'yoann565',      games:[],scheduledAt:null},
+     {n:1,p1:'Novadanieldemon',p2:'Yaniss_ard',    games:[],scheduledAt:null,paused:false},
+     {n:2,p1:'Sernser',         p2:'Baymanchess07',games:[],scheduledAt:null,paused:false},
+     {n:3,p1:'MatmasterN1',     p2:'Dahmer225',    games:[],scheduledAt:null,paused:false},
+     {n:4,p1:'Ivoirechess',     p2:'yoann565',     games:[],scheduledAt:null,paused:false},
    ]},
 ]);
 
-function loadPolls(){try{return JSON.parse(localStorage.getItem(POLL_KEY)||'{}')}catch{return{}}}
-function savePolls(d){try{localStorage.setItem(POLL_KEY,JSON.stringify(d))}catch{}}
-function loadVoted(){try{return JSON.parse(localStorage.getItem(VOTED_KEY)||'{}')}catch{return{}}}
-function saveVoted(d){try{localStorage.setItem(VOTED_KEY,JSON.stringify(d))}catch{}}
+function getDeviceId(){
+  try{
+    const found=localStorage.getItem(DEVICE_KEY);
+    if(found)return found;
+    const next=(crypto.randomUUID?crypto.randomUUID():`viewer_${Date.now()}_${Math.random().toString(16).slice(2)}`);
+    localStorage.setItem(DEVICE_KEY,next);
+    return next;
+  }catch{
+    return `viewer_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  }
+}
+function buildPollShell(p1,p2){return{winner:{[p1]:0,[p2]:0,draw:0},scores:{}}}
+function aggregatePollVotes(rows){
+  const polls={};
+  const viewerVotes={};
+  (rows||[]).forEach(r=>{
+    const key=r.poll_key;
+    if(!polls[key])polls[key]={winner:{},scores:{}};
+    if(r.winner_vote)polls[key].winner[r.winner_vote]=(polls[key].winner[r.winner_vote]||0)+1;
+    if(r.score_vote)polls[key].scores[r.score_vote]=(polls[key].scores[r.score_vote]||0)+1;
+    viewerVotes[key]={name:r.voter_name||'Anonyme',winner_vote:r.winner_vote,score_vote:r.score_vote||''};
+  });
+  return{polls,viewerVotes};
+}
+function semisToBoardRows(semis){
+  return semis.flatMap(match=>match.boards.map(board=>({
+    board_key:`semi_${match.id}_${board.n}`,
+    phase:'semi',
+    semi_id:match.id,
+    board_number:board.n,
+    player1:board.p1,
+    player2:board.p2,
+    scheduled_at:board.scheduledAt||null,
+    paused:!!board.paused,
+    games:board.games||[],
+    updated_at:new Date().toISOString(),
+  })));
+}
+function finalToBoardRow(finalGames,w0,w1){
+  if(!w0||!w1)return null;
+  return{
+    board_key:'final',
+    phase:'final',
+    semi_id:null,
+    board_number:1,
+    player1:w0.name,
+    player2:w1.name,
+    scheduled_at:null,
+    paused:false,
+    games:finalGames||[],
+    updated_at:new Date().toISOString(),
+  };
+}
+function applyBoardRows(baseSemis,rows){
+  const next=baseSemis.map(m=>({...m,boards:m.boards.map(b=>({...b}))}));
+  (rows||[]).filter(r=>r.phase==='semi').forEach(row=>{
+    const match=next.find(m=>m.id===row.semi_id);
+    const board=match?.boards.find(b=>b.n===row.board_number);
+    if(!board)return;
+    board.p1=row.player1||board.p1;
+    board.p2=row.player2||board.p2;
+    board.games=Array.isArray(row.games)?row.games:[];
+    board.scheduledAt=row.scheduled_at||null;
+    board.paused=!!row.paused;
+  });
+  return next;
+}
+function extractFinalRow(rows){return(rows||[]).find(r=>r.board_key==='final')||null}
 function bScore(b){let s1=0,s2=0;(b.games||[]).forEach(g=>{if(g.r==='1')s1++;else if(g.r==='2')s2++;else if(g.r==='d'){s1+=.5;s2+=.5;}});return[s1,s2];}
 function bWinner(b){const[s1,s2]=bScore(b);if(s1>=2.5)return'1';if(s2>=2.5)return'2';return null;}
 function mScore(boards){let s1=0,s2=0;boards.forEach(b=>{const w=bWinner(b);if(w==='1')s1++;else if(w==='2')s2++;});return[s1,s2];}
@@ -274,29 +329,40 @@ function Chrono({started,paused,elapsed,onStart,onPause,onResume,onResetScores,o
   );
 }
 
-function Poll({bk,p1,p2,c1,c2,pollsVersion,onVote}){
-  const[polls,setPolls]=useState(loadPolls);const[voted,setVoted]=useState(loadVoted);const[winV,setWinV]=useState(null);const[scV,setScV]=useState('');const[name,setName]=useState('');const[step,setStep]=useState(()=>loadVoted()[bk]?'results':'vote');
-  useEffect(()=>{setPolls(loadPolls());setVoted(loadVoted());setStep(loadVoted()[bk]?'results':'vote');},[pollsVersion,bk]);
-  const pd=polls[bk]||{winner:{[p1]:0,[p2]:0,draw:0},scores:{}};const totW=Object.values(pd.winner||{}).reduce((a,b)=>a+b,0);const totS=Object.values(pd.scores||{}).reduce((a,b)=>a+b,0);
-  function submit(){if(!winV)return;const np={...polls};if(!np[bk])np[bk]={winner:{[p1]:0,[p2]:0,draw:0},scores:{}};np[bk].winner[winV]=(np[bk].winner[winV]||0)+1;if(scV)np[bk].scores[scV]=(np[bk].scores[scV]||0)+1;const nv={...voted,[bk]:{name:name||'Anonyme',winV,scV}};savePolls(np);saveVoted(nv);setPolls(np);setVoted(nv);setStep('results');if(onVote)onVote();}
-  function resetV(){const nv={...voted};delete nv[bk];saveVoted(nv);setVoted(nv);setStep('vote');setWinV(null);setScV('');setName('');}
+function Poll({bk,p1,p2,c1,c2,pollData,viewerVote,onVote,submitting}){
+  const[winV,setWinV]=useState(viewerVote?.winner_vote||null);
+  const[scV,setScV]=useState(viewerVote?.score_vote||'');
+  const[name,setName]=useState(viewerVote?.name||'');
+  const[step,setStep]=useState(()=>viewerVote?'results':'vote');
+  useEffect(()=>{setWinV(viewerVote?.winner_vote||null);setScV(viewerVote?.score_vote||'');setName(viewerVote?.name||'');setStep(viewerVote?'results':'vote');},[bk,viewerVote]);
+  const pd=useMemo(()=>{
+    const shell=buildPollShell(p1,p2);
+    if(!pollData)return shell;
+    return{
+      winner:{...shell.winner,...(pollData.winner||{})},
+      scores:{...(pollData.scores||{})},
+    };
+  },[pollData,p1,p2]);
+  const totW=Object.values(pd.winner||{}).reduce((a,b)=>a+b,0);
+  const totS=Object.values(pd.scores||{}).reduce((a,b)=>a+b,0);
+  async function submit(){if(!winV||!onVote)return;await onVote({bk,winner_vote:winV,score_vote:scV||null,voter_name:name||'Anonyme'});setStep('results');}
   const Bar=({label,val,tot,color,top})=>(<div style={{marginBottom:7}}><div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}><span style={{fontSize:11,fontFamily:'Cinzel,serif',color:top?color:'var(--txt3)',fontWeight:top?'700':'400'}}>{label}</span><span style={{fontSize:11,fontFamily:"'Courier New',monospace",color:top?color:'var(--txt3)',fontWeight:'700'}}>{val} · {pct(val,tot)}%</span></div><div style={{height:5,background:'var(--bg3)',borderRadius:3,overflow:'hidden'}}><div style={{height:'100%',width:`${pct(val,tot)}%`,background:color,borderRadius:3,transition:'width .7s ease'}}/></div></div>);
   return(
     <div style={{background:'linear-gradient(135deg,var(--bg2),#FFFEF8)',border:'1.5px solid rgba(200,146,10,0.2)',borderRadius:12,padding:'13px',marginTop:12}}>
       <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:10}}><div style={{width:6,height:6,borderRadius:'50%',background:'var(--gold)'}}/><span style={{fontSize:10,fontFamily:'Cinzel,serif',color:'var(--gold)',letterSpacing:'.22em',textTransform:'uppercase',fontWeight:'700'}}>Sondage</span><span style={{flex:1}}/><span style={{fontSize:10,color:'var(--txt3)',fontStyle:'italic'}}>{totW} vote{totW!==1?'s':''}</span></div>
       {step==='vote'&&(<div style={{animation:'popIn .3s ease both'}}>
-        <div style={{marginBottom:9}}><div style={{fontSize:11,color:'#5A4A2A',fontFamily:'Cinzel,serif',marginBottom:5,fontWeight:'700'}}>Qui va gagner ?</div><div style={{display:'flex',gap:5,flexWrap:'wrap'}}>{[[p1,c1,'win'],[p2,c2,'lose'],['Nulle','#888','draw']].map(([lb,col,val])=>(<button key={val} onClick={()=>setWinV(val===winV?null:val)} style={{border:`2px solid ${winV===val?col:'var(--bord)'}`,background:winV===val?`${col}18`:'var(--bg)',color:winV===val?col:'var(--txt3)',borderRadius:20,padding:'4px 11px',fontFamily:'Cinzel,serif',fontSize:10,fontWeight:winV===val?'700':'400'}}>{lb}</button>))}</div></div>
+        <div style={{marginBottom:9}}><div style={{fontSize:11,color:'#5A4A2A',fontFamily:'Cinzel,serif',marginBottom:5,fontWeight:'700'}}>Qui va gagner ?</div><div style={{display:'flex',gap:5,flexWrap:'wrap'}}>{[[p1,c1],[p2,c2],['draw','#888']].map(([lb,col])=>(<button key={lb} onClick={()=>setWinV(lb===winV?null:lb)} style={{border:`2px solid ${winV===lb?col:'var(--bord)'}`,background:winV===lb?`${col}18`:'var(--bg)',color:winV===lb?col:'var(--txt3)',borderRadius:20,padding:'4px 11px',fontFamily:'Cinzel,serif',fontSize:10,fontWeight:winV===lb?'700':'400'}}>{lb==='draw'?'Nulle':lb}</button>))}</div></div>
         <div style={{marginBottom:9}}><div style={{fontSize:11,color:'#5A4A2A',fontFamily:'Cinzel,serif',marginBottom:4,fontWeight:'700'}}>Score ? <span style={{color:'var(--txt3)',fontWeight:'400'}}>(optionnel)</span></div><div style={{display:'flex',gap:4,flexWrap:'wrap'}}>{SCORES.map(sc=>(<button key={sc} onClick={()=>setScV(sc===scV?'':sc)} style={{border:`1.5px solid ${scV===sc?'var(--gold)':'var(--bord)'}`,background:scV===sc?'rgba(200,146,10,0.1)':'var(--bg)',color:scV===sc?'var(--gold)':'var(--txt3)',borderRadius:13,padding:'3px 8px',fontFamily:"'Courier New',monospace",fontSize:10,fontWeight:scV===sc?'700':'400'}}>{sc}</button>))}</div></div>
         <input value={name} onChange={e=>setName(e.target.value)} placeholder="Ton pseudo (optionnel)" maxLength={28} style={{width:'100%',background:'var(--bg)',border:'1px solid var(--bord)',borderRadius:8,padding:'6px 10px',fontSize:12,color:'var(--txt)',marginBottom:9}}/>
-        <button onClick={submit} disabled={!winV} style={{width:'100%',background:winV?'linear-gradient(135deg,var(--gold),var(--or))':'var(--bg3)',border:`1.5px solid ${winV?'var(--gold)':'var(--bord)'}`,color:winV?'#fff':'var(--txt3)',borderRadius:8,padding:'8px',fontFamily:'Cinzel,serif',fontSize:12,fontWeight:'700',opacity:winV?1:.5}}>🗳 Voter</button>
+        <button onClick={submit} disabled={!winV||submitting} style={{width:'100%',background:winV?'linear-gradient(135deg,var(--gold),var(--or))':'var(--bg3)',border:`1.5px solid ${winV?'var(--gold)':'var(--bord)'}`,color:winV?'#fff':'var(--txt3)',borderRadius:8,padding:'8px',fontFamily:'Cinzel,serif',fontSize:12,fontWeight:'700',opacity:winV?1:.5}}>{submitting?'Synchronisation…':'🗳 Voter'}</button>
       </div>)}
       {step==='results'&&(<div style={{animation:'popIn .4s ease both'}}>
-        <div style={{fontSize:11,color:'var(--txt3)',fontStyle:'italic',padding:'5px 9px',background:'rgba(200,146,10,0.06)',borderRadius:6,marginBottom:9}}>✓ <strong style={{color:'var(--gold)'}}>{voted[bk]?.name}</strong> : {voted[bk]?.winV==='draw'?'nulle':voted[bk]?.winV==='win'?`victoire ${p1}`:`victoire ${p2}`}{voted[bk]?.scV?` · ${voted[bk].scV}`:''}</div>
+        <div style={{fontSize:11,color:'var(--txt3)',fontStyle:'italic',padding:'5px 9px',background:'rgba(200,146,10,0.06)',borderRadius:6,marginBottom:9}}>✓ <strong style={{color:'var(--gold)'}}>{viewerVote?.name||'Anonyme'}</strong> : {viewerVote?.winner_vote==='draw'?'nulle':`victoire ${viewerVote?.winner_vote||''}`}{viewerVote?.score_vote?` · ${viewerVote.score_vote}`:''}</div>
         <Bar label={p1} val={pd.winner?.[p1]||0} tot={totW} color={c1} top={(pd.winner?.[p1]||0)>=(pd.winner?.[p2]||0)&&(pd.winner?.[p1]||0)>=(pd.winner?.draw||0)}/>
         <Bar label={p2} val={pd.winner?.[p2]||0} tot={totW} color={c2} top={(pd.winner?.[p2]||0)>(pd.winner?.[p1]||0)&&(pd.winner?.[p2]||0)>=(pd.winner?.draw||0)}/>
         <Bar label="Nulle" val={pd.winner?.draw||0} tot={totW} color="#888" top={false}/>
         {Object.keys(pd.scores||{}).length>0&&(<div style={{marginTop:9}}><div style={{fontSize:11,color:'#5A4A2A',fontFamily:'Cinzel,serif',marginBottom:5,fontWeight:'700'}}>Scores pronostiqués</div>{Object.entries(pd.scores).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([sc,cnt])=>(<div key={sc} style={{display:'flex',alignItems:'center',gap:7,marginBottom:4}}><span style={{fontFamily:"'Courier New',monospace",fontSize:11,color:'var(--gold)',minWidth:36,fontWeight:'700'}}>{sc}</span><div style={{flex:1,height:4,background:'var(--bg3)',borderRadius:2,overflow:'hidden'}}><div style={{height:'100%',width:`${pct(cnt,totS)}%`,background:'var(--gold)',borderRadius:2,transition:'width .6s'}}/></div><span style={{fontSize:10,color:'var(--txt3)',minWidth:22,textAlign:'right'}}>{cnt}x</span></div>))}</div>)}
-        <button onClick={resetV} style={{marginTop:8,background:'none',border:'1px solid var(--bord)',color:'var(--txt3)',borderRadius:20,padding:'3px 10px',fontSize:10,fontFamily:'Cinzel,serif'}}>✎ Modifier</button>
+        <button onClick={()=>setStep('vote')} style={{marginTop:8,background:'none',border:'1px solid var(--bord)',color:'var(--txt3)',borderRadius:20,padding:'3px 10px',fontSize:10,fontFamily:'Cinzel,serif'}}>✎ Modifier</button>
       </div>)}
     </div>
   );
@@ -326,10 +392,15 @@ function GamesList({games,p1,p2,c1,c2,newCount}){
   </div>);
 }
 
-function BoardCard({board,c1,c2,semiIdx,started,paused,admin,onGames,onTime,startedAt,pollsVersion,onPollVote}){
-  const[ls,setLs]=useState({loading:false,error:false,last:null,newCount:0});const prevLen=useRef(board.games.length);const[editTime,setEditTime]=useState(false);const[timeVal,setTimeVal]=useState(board.scheduledAt||'');const[boardPaused,setBoardPaused]=useState(false);const[confResetBoard,setConfResetBoard]=useState(false);
-  const refresh=useCallback(async()=>{if(!started||paused||boardPaused)return;setLs(s=>({...s,loading:true,error:false}));const{games,error}=await fetchPair(board.p1,board.p2,startedAt);const added=Math.max(games.length-prevLen.current,0);prevLen.current=games.length;setLs({loading:false,error,last:Date.now(),newCount:added});if(!error)onGames(board.n,games);setTimeout(()=>setLs(s=>({...s,newCount:0})),3000);},[board.p1,board.p2,board.n,started,paused,boardPaused,startedAt,onGames]);
-  useEffect(()=>{if(!started||paused||boardPaused)return;refresh();const id=setInterval(refresh,60000);return()=>clearInterval(id);},[started,paused,boardPaused]);
+function BoardCard({board,c1,c2,semiIdx,started,paused,admin,onGames,onTime,onTogglePause,startedAt,pollData,viewerVote,onPollVote,pollSubmitting,refreshSeed}){
+  const[ls,setLs]=useState({loading:false,error:false,last:null,newCount:0});
+  const prevLen=useRef(board.games.length);
+  const[editTime,setEditTime]=useState(false);
+  const[timeVal,setTimeVal]=useState(board.scheduledAt||'');
+  const[confResetBoard,setConfResetBoard]=useState(false);
+  useEffect(()=>{setTimeVal(board.scheduledAt||'');prevLen.current=board.games.length;},[board.scheduledAt,board.games.length]);
+  const refresh=useCallback(async()=>{if(!started||paused||board.paused)return;setLs(s=>({...s,loading:true,error:false}));const{games,error}=await fetchPair(board.p1,board.p2,startedAt);const added=Math.max(games.length-prevLen.current,0);prevLen.current=games.length;setLs({loading:false,error,last:Date.now(),newCount:added});if(!error)onGames(board.n,games);setTimeout(()=>setLs(s=>({...s,newCount:0})),3000);},[board.p1,board.p2,board.n,board.paused,started,paused,startedAt,onGames]);
+  useEffect(()=>{if(!started||paused||board.paused)return;refresh();const id=setInterval(refresh,60000);return()=>clearInterval(id);},[started,paused,board.paused,refreshSeed,refresh]);
   const[s1,s2]=bScore(board);const winner=bWinner(board);const tot=board.games.length;const locked=winner!==null;const bk=`${semiIdx}_${board.n}_${board.p1}_${board.p2}`;
   return(
     <div style={{background:'#fff',borderRadius:18,overflow:'hidden',border:`1px solid ${locked?'rgba(200,146,10,0.35)':'var(--bord)'}`,boxShadow:locked?'0 6px 28px rgba(200,146,10,0.13),0 2px 8px rgba(0,0,0,0.05)':'0 3px 16px rgba(0,0,0,0.06)',transition:'box-shadow .3s'}}>
@@ -343,7 +414,7 @@ function BoardCard({board,c1,c2,semiIdx,started,paused,admin,onGames,onTime,star
           {ls.loading&&<div style={{width:12,height:12,border:'2px solid var(--gold)',borderTopColor:'transparent',borderRadius:'50%',animation:'spn .7s linear infinite'}}/>}
           {ls.newCount>0&&<span style={{fontSize:10,background:'#F0FFF4',border:'1px solid #1A7A3C',color:'#1A7A3C',borderRadius:20,padding:'2px 8px',fontFamily:'Cinzel,serif',fontWeight:'700',animation:'popIn .3s ease'}}>+{ls.newCount} nouvelle{ls.newCount>1?'s':''}!</span>}
           {!started&&!locked&&<span style={{fontSize:10,background:'rgba(200,146,10,0.07)',border:'1px solid rgba(200,146,10,0.25)',color:'var(--gold)',borderRadius:20,padding:'2px 8px',fontFamily:'Cinzel,serif',fontWeight:'700'}}>⏳ En attente</span>}
-          {started&&(paused||boardPaused)&&!locked&&<span style={{fontSize:10,background:'rgba(204,119,0,0.08)',border:'1px solid rgba(204,119,0,0.35)',color:'#CC7700',borderRadius:20,padding:'2px 8px',fontFamily:'Cinzel,serif',fontWeight:'700'}}>⏸ {boardPaused?'Pause éch.':'Pause'}</span>}
+          {started&&(paused||board.paused)&&!locked&&<span style={{fontSize:10,background:'rgba(204,119,0,0.08)',border:'1px solid rgba(204,119,0,0.35)',color:'#CC7700',borderRadius:20,padding:'2px 8px',fontFamily:'Cinzel,serif',fontWeight:'700'}}>⏸ {board.paused?'Pause éch.':'Pause'}</span>}
           {started&&!paused&&!locked&&tot===0&&!ls.loading&&<span style={{fontSize:10,background:'rgba(26,122,60,0.07)',border:'1px solid rgba(26,122,60,0.3)',color:'#1A7A3C',borderRadius:20,padding:'2px 8px',fontFamily:'Cinzel,serif',fontWeight:'700',animation:'pdot 1.5s ease-in-out infinite'}}>🟢 En cours</span>}
           {started&&!paused&&!locked&&tot>0&&<span style={{fontSize:10,background:'#F0FFF4',border:'1px solid #1A7A3C44',color:'#1A7A3C',borderRadius:20,padding:'2px 8px',fontFamily:'Cinzel,serif'}}>{tot} partie{tot>1?'s':''}</span>}
           {locked&&<span style={{fontSize:10,background:'rgba(200,146,10,0.1)',border:'1px solid rgba(200,146,10,0.4)',color:'var(--gold)',borderRadius:20,padding:'2px 8px',fontFamily:'Cinzel,serif',fontWeight:'700'}}>🏆 Terminé</span>}
@@ -382,13 +453,12 @@ function BoardCard({board,c1,c2,semiIdx,started,paused,admin,onGames,onTime,star
           ):(<div style={{display:'flex',gap:5,alignItems:'center',flex:1,minWidth:0,flexWrap:'wrap'}}><input type="datetime-local" value={timeVal} onChange={e=>setTimeVal(e.target.value)} style={{background:'var(--bg)',border:'1px solid var(--bord)',borderRadius:7,padding:'4px 8px',fontSize:11,color:'var(--txt)',flex:1,minWidth:160}}/><button onClick={()=>{onTime(board.n,timeVal||null);setEditTime(false);}} style={{background:'#F0FFF4',border:'1px solid #1A7A3C',color:'#1A7A3C',borderRadius:7,padding:'4px 10px',fontSize:11}}>✓</button><button onClick={()=>setEditTime(false)} style={{background:'var(--bg)',border:'1px solid var(--bord)',color:'var(--txt3)',borderRadius:7,padding:'4px 8px',fontSize:11}}>✕</button></div>)}
         </div>
         {started&&ls.last&&(<div style={{display:'flex',alignItems:'center',gap:5,marginBottom:8}}><div style={{width:5,height:5,borderRadius:'50%',background:ls.error?'#CC2244':'#1A7A3C',animation:'pdot 2s ease-in-out infinite'}}/><span style={{fontSize:9,color:'var(--txt3)',fontStyle:'italic'}}>Sync: {new Date(ls.last).toLocaleTimeString('fr-FR')} · Auto 60s</span></div>)}
-        {/* Contrôles par échiquier — admin uniquement */}
         {admin&&started&&(
           <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap',marginBottom:10,padding:'8px 10px',background:'rgba(200,146,10,0.05)',borderRadius:8,border:'1px dashed rgba(200,146,10,0.2)'}}>
             <span style={{fontSize:9,color:'var(--gold)',fontFamily:'Cinzel,serif',letterSpacing:'.1em',textTransform:'uppercase',fontWeight:'700'}}>🔓 Éch. {board.n} :</span>
-            {!boardPaused
-              ?<button onClick={()=>setBoardPaused(true)} style={{background:'#FFF8EC',border:'1.5px solid #CC7700',color:'#CC7700',borderRadius:7,padding:'4px 10px',fontFamily:'Cinzel,serif',fontSize:10,fontWeight:'700'}}>⏸ Pause</button>
-              :<button onClick={()=>{setBoardPaused(false);}} style={{background:'#F0FFF4',border:'1.5px solid #1A7A3C',color:'#1A7A3C',borderRadius:7,padding:'4px 10px',fontFamily:'Cinzel,serif',fontSize:10,fontWeight:'700'}}>▶ Reprendre</button>
+            {!board.paused
+              ?<button onClick={()=>onTogglePause(board.n,true)} style={{background:'#FFF8EC',border:'1.5px solid #CC7700',color:'#CC7700',borderRadius:7,padding:'4px 10px',fontFamily:'Cinzel,serif',fontSize:10,fontWeight:'700'}}>⏸ Pause</button>
+              :<button onClick={()=>onTogglePause(board.n,false)} style={{background:'#F0FFF4',border:'1.5px solid #1A7A3C',color:'#1A7A3C',borderRadius:7,padding:'4px 10px',fontFamily:'Cinzel,serif',fontSize:10,fontWeight:'700'}}>▶ Reprendre</button>
             }
             {!confResetBoard
               ?<button onClick={()=>setConfResetBoard(true)} style={{background:'#FFF0EE',border:'1.5px solid #CC4433',color:'#CC4433',borderRadius:7,padding:'4px 10px',fontFamily:'Cinzel,serif',fontSize:10,fontWeight:'700'}}>🗑 Remettre à zéro</button>
@@ -398,16 +468,16 @@ function BoardCard({board,c1,c2,semiIdx,started,paused,admin,onGames,onTime,star
                 <button onClick={()=>setConfResetBoard(false)} style={{background:'none',border:'1px solid #CC4433',color:'#CC4433',borderRadius:5,padding:'2px 6px',fontSize:10}}>Non</button>
               </div>
             }
-            {boardPaused&&<span style={{fontSize:9,color:'#CC7700',fontStyle:'italic',fontFamily:'Cinzel,serif'}}>⏸ Échiquier en pause</span>}
+            {board.paused&&<span style={{fontSize:9,color:'#CC7700',fontStyle:'italic',fontFamily:'Cinzel,serif'}}>⏸ Échiquier en pause</span>}
           </div>
         )}
-        <Poll bk={bk} p1={board.p1} p2={board.p2} c1={c1} c2={c2} pollsVersion={pollsVersion} onVote={onPollVote}/>
+        <Poll bk={bk} p1={board.p1} p2={board.p2} c1={c1} c2={c2} pollData={pollData} viewerVote={viewerVote} onVote={onPollVote} submitting={pollSubmitting}/>
       </div>
     </div>
   );
 }
 
-function SemiView({match,started,paused,admin,onGames,onTime,onRefresh,startedAt,pollsVersion,onPollVote}){
+function SemiView({match,started,paused,admin,onGames,onTime,onTogglePause,onRefresh,startedAt,polls,viewerVotes,onPollVote,pollSubmitting,refreshSeed}){
   const[ms1,ms2]=mScore(match.boards);const winner=mWinner(match);
   return(
     <div style={{maxWidth:740,margin:'0 auto',animation:'fi .4s ease both'}}>
@@ -429,17 +499,18 @@ function SemiView({match,started,paused,admin,onGames,onTime,onRefresh,startedAt
       <div style={{height:5,background:'var(--bg3)',display:'flex',overflow:'hidden'}}><div style={{width:`${(ms1/match.boards.length)*100}%`,background:match.team1.color,transition:'width .5s ease'}}/><div style={{width:`${(ms2/match.boards.length)*100}%`,background:match.team2.color,marginLeft:'auto',transition:'width .5s ease'}}/></div>
       {started&&<div style={{display:'flex',justifyContent:'flex-end',padding:'8px 0 4px'}}><button onClick={onRefresh} style={{background:'var(--bg2)',border:'1.5px solid var(--gold)',color:'var(--gold)',borderRadius:8,padding:'5px 13px',fontSize:11,fontFamily:'Cinzel,serif',fontWeight:'700'}}>🔄 Tout rafraîchir</button></div>}
       <div style={{display:'flex',flexDirection:'column',gap:14,marginTop:8}}>
-        {match.boards.map(b=>(<BoardCard key={`${b.p1}-${b.p2}`} board={b} c1={match.team1.color} c2={match.team2.color} semiIdx={match.id} started={started} paused={paused} admin={admin} onGames={onGames} onTime={onTime} startedAt={startedAt} pollsVersion={pollsVersion} onPollVote={onPollVote}/>))}
+        {match.boards.map(b=>(<BoardCard key={`${b.p1}-${b.p2}`} board={b} c1={match.team1.color} c2={match.team2.color} semiIdx={match.id} started={started} paused={paused} admin={admin} onGames={onGames} onTime={onTime} onTogglePause={onTogglePause} startedAt={startedAt} pollData={polls[`${match.id}_${b.n}_${b.p1}_${b.p2}`]} viewerVote={viewerVotes[`${match.id}_${b.n}_${b.p1}_${b.p2}`]} onPollVote={onPollVote} pollSubmitting={pollSubmitting} refreshSeed={refreshSeed}/>))}
       </div>
       {winner&&(<div style={{marginTop:16,background:'linear-gradient(135deg,#FFFBEE,#FFF8E0)',border:'2px solid var(--gold)',borderRadius:18,padding:'20px 24px',textAlign:'center',boxShadow:'0 6px 28px rgba(200,146,10,0.17)',animation:'ggl 2s ease-in-out infinite,dri .5s cubic-bezier(.34,1.56,.64,1) both'}}><div style={{fontSize:10,color:'var(--gold)',letterSpacing:'.45em',textTransform:'uppercase',marginBottom:6,fontFamily:'Cinzel,serif'}}>🏆 Qualifié pour la Finale</div><div style={{fontFamily:'Cinzel Decorative,serif',fontSize:'clamp(18px,5vw,26px)',color:'var(--txt)'}}>{winner.name}</div><div style={{fontSize:18,marginTop:5}}>🇨🇮</div></div>)}
     </div>
   );
 }
 
-function FinalBoard({p1,p2,c1,c2,games,onGames,fStarted,fPaused,onFStart,onFPause,onFResume,admin}){
+function FinalBoard({p1,p2,c1,c2,games,onGames,fStarted,fPaused,onFStart,onFPause,onFResume,admin,startedAt,refreshSeed}){
   const[ls,setLs]=useState({loading:false,error:false,last:null,newCount:0});const prevLen=useRef(games.length);
-  const refresh=useCallback(async()=>{if(!fStarted||fPaused)return;setLs(s=>({...s,loading:true,error:false}));const{games:g,error}=await fetchPair(p1,p2);const added=Math.max(g.length-prevLen.current,0);prevLen.current=g.length;setLs({loading:false,error,last:Date.now(),newCount:added});if(!error)onGames(g);setTimeout(()=>setLs(s=>({...s,newCount:0})),3000);},[p1,p2,fStarted,fPaused]);
-  useEffect(()=>{if(!fStarted||fPaused)return;refresh();const id=setInterval(refresh,60000);return()=>clearInterval(id);},[fStarted,fPaused]);
+  useEffect(()=>{prevLen.current=games.length;},[games.length]);
+  const refresh=useCallback(async()=>{if(!fStarted||fPaused)return;setLs(s=>({...s,loading:true,error:false}));const{games:g,error}=await fetchPair(p1,p2,startedAt);const added=Math.max(g.length-prevLen.current,0);prevLen.current=g.length;setLs({loading:false,error,last:Date.now(),newCount:added});if(!error)onGames(g);setTimeout(()=>setLs(s=>({...s,newCount:0})),3000);},[p1,p2,fStarted,fPaused,startedAt,onGames]);
+  useEffect(()=>{if(!fStarted||fPaused)return;refresh();const id=setInterval(refresh,60000);return()=>clearInterval(id);},[fStarted,fPaused,refreshSeed,refresh]);
   const[s1,s2]=bScore({games});const winner=bWinner({games});const tot=games.length;
   return(
     <div style={{background:'#fff',borderRadius:16,overflow:'hidden',border:'1.5px solid rgba(200,146,10,0.35)',boxShadow:'0 6px 28px rgba(200,146,10,0.13)',marginTop:20}}>
@@ -480,7 +551,7 @@ function FinalBoard({p1,p2,c1,c2,games,onGames,fStarted,fPaused,onFStart,onFPaus
   );
 }
 
-function Bracket({semis,finalGames,onFinalGames,finalStarted,finalPaused,onFStart,onFPause,onFResume,admin}){
+function Bracket({semis,finalGames,onFinalGames,finalStarted,finalPaused,onFStart,onFPause,onFResume,admin,startedAt,refreshSeed}){
   const w0=mWinner(semis[0]),w1=mWinner(semis[1]);
   const[fs1,fs2]=bScore({games:finalGames||[]});
   const fWinner=fs1>=2.5?w0:fs2>=2.5?w1:null;
@@ -512,7 +583,7 @@ function Bracket({semis,finalGames,onFinalGames,finalStarted,finalPaused,onFStar
       <div className="ks2" style={{marginTop:20,borderRadius:3}}/>
       {w0&&w1?(<div style={{marginTop:20}}>
         <div style={{textAlign:'center',marginBottom:12}}><div style={{fontFamily:'Cinzel Decorative,serif',fontSize:'clamp(13px,3vw,20px)',color:'var(--gold)'}}>⚔ Grande Finale ⚔</div><div style={{fontSize:11,color:'var(--txt3)',fontStyle:'italic',marginTop:3}}>Best of 4 · Résultats automatiques via Chess.com</div></div>
-        <FinalBoard p1={w0.name} p2={w1.name} c1={w0.color} c2={w1.color} games={finalGames||[]} onGames={onFinalGames} fStarted={finalStarted} fPaused={finalPaused} onFStart={onFStart} onFPause={onFPause} onFResume={onFResume} admin={admin}/>
+        <FinalBoard p1={w0.name} p2={w1.name} c1={w0.color} c2={w1.color} games={finalGames||[]} onGames={onFinalGames} fStarted={finalStarted} fPaused={finalPaused} onFStart={onFStart} onFPause={onFPause} onFResume={onFResume} admin={admin} startedAt={startedAt} refreshSeed={refreshSeed}/>
       </div>):(<div style={{marginTop:20,textAlign:'center',padding:'20px',background:'rgba(200,146,10,0.04)',borderRadius:12,border:'1px dashed rgba(200,146,10,0.3)'}}><div style={{fontSize:14,color:'var(--gold)',fontFamily:'Cinzel,serif',fontStyle:'italic'}}>⏳ La Finale sera configurée automatiquement dès que les demi-finales seront terminées</div></div>)}
       <div style={{marginTop:20,display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:12}}>
         {semis.map((m,i)=>{const[ms1,ms2]=mScore(m.boards);const w=mWinner(m);return(
@@ -527,8 +598,7 @@ function Bracket({semis,finalGames,onFinalGames,finalStarted,finalPaused,onFStar
   );
 }
 
-
-/* ══ SUPABASE SYNC — temps réel instantané ══ */
+/* ══ SUPABASE SYNC — structure normalisée ══ */
 const SUPA_URL = 'https://dhgvcvqxkrckkakpczzl.supabase.co';
 const SUPA_KEY = 'sb_publishable_Su72qv7itjyxtU2p-gnpsA_2dNXU_Ru';
 let supabase = null;
@@ -536,48 +606,95 @@ try {
   if(window.supabase) supabase = window.supabase.createClient(SUPA_URL, SUPA_KEY);
 } catch(e) { console.warn('Supabase init failed', e); }
 
-async function pushTournament(data) {
+async function pushTournamentState(state) {
   if(!supabase) return false;
   try {
-    const { error } = await supabase
-      .from('tournament_state')
-      .upsert(
-        { id: 'main', data, updated_at: new Date().toISOString() },
-        { onConflict: 'id' }
-      );
-    if (error) { console.warn('push error', error); return false; }
+    const payload={
+      id:STATE_ROW_ID,
+      started:!!state.started,
+      paused:!!state.paused,
+      started_at:state.startedAt?new Date(state.startedAt).toISOString():null,
+      elapsed:state.elapsed||0,
+      final_started:!!state.finalStarted,
+      final_paused:!!state.finalPaused,
+      updated_at:new Date().toISOString(),
+    };
+    const { error } = await supabase.from('tournament_state').upsert(payload,{ onConflict:'id' });
+    if(error){console.warn('state push error', error);return false;}
     return true;
-  } catch(e) { console.warn('push error', e); return false; }
+  } catch(e) { console.warn('state push error', e); return false; }
 }
-
-async function pullTournament() {
+async function pullTournamentState() {
   if(!supabase) return null;
   try {
-    const { data, error } = await supabase
-      .from('tournament_state')
-      .select('data')
-      .eq('id', 'main')
-      .maybeSingle();
-    if (error || !data) return null;
-    return data.data;
+    const { data, error } = await supabase.from('tournament_state').select('started,paused,started_at,elapsed,final_started,final_paused,updated_at').eq('id', STATE_ROW_ID).maybeSingle();
+    if(error||!data) return null;
+    return data;
   } catch(e) { return null; }
 }
-
-function subscribeToTournament(onUpdate, onStatus) {
+function subscribeToTournamentState(onUpdate, onStatus) {
   if(!supabase) return { unsubscribe:()=>{} };
-  return supabase
-    .channel('tournament_realtime')
-    .on('postgres_changes', {
-      event: '*',
-      schema: 'public',
-      table: 'tournament_state',
-      filter: 'id=eq.main'
-    }, payload => {
-      if (payload.new?.data) onUpdate(payload.new.data);
-    })
-    .subscribe((status, err) => {
-      if(onStatus) onStatus(status, err);
-    });
+  return supabase.channel('tournament_state_realtime').on('postgres_changes',{event:'*',schema:'public',table:'tournament_state',filter:`id=eq.${STATE_ROW_ID}`},payload=>{if(payload.new)onUpdate(payload.new);}).subscribe((status,err)=>{if(onStatus)onStatus(status,err);});
+}
+
+async function pushBoardsState(semis, finalGames) {
+  if(!supabase) return false;
+  try {
+    const w0=mWinner(semis[0]),w1=mWinner(semis[1]);
+    const rows=semisToBoardRows(semis);
+    const finalRow=finalToBoardRow(finalGames,w0,w1);
+    if(finalRow)rows.push(finalRow);
+    const { error } = await supabase.from('boards').upsert(rows,{ onConflict:'board_key' });
+    if(error){console.warn('boards push error', error);return false;}
+    if(!finalRow){
+      const { error: deleteError } = await supabase.from('boards').delete().eq('board_key','final');
+      if(deleteError)console.warn('final board delete error', deleteError);
+    }
+    return true;
+  } catch(e) { console.warn('boards push error', e); return false; }
+}
+async function pullBoardsState() {
+  if(!supabase) return [];
+  try {
+    const { data, error } = await supabase.from('boards').select('board_key,phase,semi_id,board_number,player1,player2,scheduled_at,paused,games,updated_at').order('phase').order('semi_id',{ascending:true}).order('board_number',{ascending:true});
+    if(error||!data) return [];
+    return data;
+  } catch(e) { return []; }
+}
+function subscribeToBoards(onUpdate, onStatus) {
+  if(!supabase) return { unsubscribe:()=>{} };
+  return supabase.channel('boards_realtime').on('postgres_changes',{event:'*',schema:'public',table:'boards'},()=>{onUpdate();}).subscribe((status,err)=>{if(onStatus)onStatus(status,err);});
+}
+
+async function upsertPollVote(vote) {
+  if(!supabase) return false;
+  try {
+    const { error } = await supabase.from('poll_votes').upsert({
+      poll_key:vote.poll_key,
+      voter_id:vote.voter_id,
+      voter_name:vote.voter_name||'Anonyme',
+      winner_vote:vote.winner_vote,
+      score_vote:vote.score_vote||null,
+      updated_at:new Date().toISOString(),
+    },{ onConflict:'poll_key,voter_id' });
+    if(error){console.warn('poll push error', error);return false;}
+    return true;
+  } catch(e) { console.warn('poll push error', e); return false; }
+}
+async function pullPollVotes(viewerId) {
+  if(!supabase) return {polls:{},viewerVotes:{}};
+  try {
+    const { data, error } = await supabase.from('poll_votes').select('poll_key,voter_id,voter_name,winner_vote,score_vote');
+    if(error||!data)return {polls:{},viewerVotes:{}};
+    const agg=aggregatePollVotes(data);
+    const viewerVotes={};
+    data.filter(r=>r.voter_id===viewerId).forEach(r=>{viewerVotes[r.poll_key]={name:r.voter_name||'Anonyme',winner_vote:r.winner_vote,score_vote:r.score_vote||''};});
+    return{polls:agg.polls,viewerVotes};
+  } catch(e) { return {polls:{},viewerVotes:{}}; }
+}
+function subscribeToPollVotes(onUpdate, onStatus) {
+  if(!supabase) return { unsubscribe:()=>{} };
+  return supabase.channel('poll_votes_realtime').on('postgres_changes',{event:'*',schema:'public',table:'poll_votes'},()=>{onUpdate();}).subscribe((status,err)=>{if(onStatus)onStatus(status,err);});
 }
 
 function SyncPanel({open, onClose, syncStatus}) {
@@ -626,130 +743,89 @@ function SyncPanel({open, onClose, syncStatus}) {
 
 
 function App(){
-  const[semis,setSemis]=useState(()=>{try{const saved=localStorage.getItem(SEMIS_KEY);return saved?JSON.parse(saved):INIT();}catch{return INIT();}});const[tab,setTab]=useState(0);const[confetti,setConfetti]=useState(false);
-  const[started,setStarted]=useState(()=>{try{return JSON.parse(localStorage.getItem(STARTED_KEY)||'false');}catch{return false;}});
-  const[paused,setPaused]=useState(()=>{try{return JSON.parse(localStorage.getItem(PAUSED_KEY)||'false');}catch{return false;}});
-  const[elapsed,setElapsed]=useState(()=>{
-    try{
-      const base=JSON.parse(localStorage.getItem(ELAPSED_KEY)||'0')||0;
-      const st=JSON.parse(localStorage.getItem(STARTED_KEY)||'false');
-      const ps=JSON.parse(localStorage.getItem(PAUSED_KEY)||'false');
-      const ts=JSON.parse(localStorage.getItem(ELAPSED_TS_KEY)||'0')||0;
-      if(st&&!ps&&ts>0){return base+Math.max(0,Math.floor((Date.now()-ts)/1000));}
-      return base;
-    }catch{return 0;}
-  });
-  const[startedAt,setStartedAt]=useState(()=>{try{return JSON.parse(localStorage.getItem(STARTED_AT_KEY)||'null');}catch{return null;}});
-  const[finalGames,setFinalGames]=useState(()=>{try{return JSON.parse(localStorage.getItem(FINAL_GAMES_KEY)||'[]');}catch{return[];}});
-  const[finalStarted,setFinalStarted]=useState(()=>{try{return JSON.parse(localStorage.getItem(FINAL_STARTED_KEY)||'false');}catch{return false;}});
-  const[finalPaused,setFinalPaused]=useState(()=>{try{return JSON.parse(localStorage.getItem(FINAL_PAUSED_KEY)||'false');}catch{return false;}});
-  const[pollsVersion,setPollsVersion]=useState(0);
+  const viewerIdRef=useRef(null);if(!viewerIdRef.current)viewerIdRef.current=getDeviceId();
+  const[semis,setSemis]=useState(INIT);const[tab,setTab]=useState(0);const[confetti,setConfetti]=useState(false);
+  const[started,setStarted]=useState(false);
+  const[paused,setPaused]=useState(false);
+  const[elapsed,setElapsed]=useState(0);
+  const[startedAt,setStartedAt]=useState(null);
+  const[finalGames,setFinalGames]=useState([]);
+  const[finalStarted,setFinalStarted]=useState(false);
+  const[finalPaused,setFinalPaused]=useState(false);
+  const[polls,setPolls]=useState({});
+  const[viewerVotes,setViewerVotes]=useState({});
+  const[pollSubmitting,setPollSubmitting]=useState(false);
   const{admin,login,logout}=useAdmin();const[adminOpen,setAdminOpen]=useState(false);
   const timerRef=useRef(null);const prevW=useRef(null);const elapsedRef=useRef(0);
-  /* ── SUPABASE SYNC ── */
+  const semisRef=useRef(semis);const finalGamesRef=useRef(finalGames);const startedRef=useRef(started);const pausedRef=useRef(paused);const startedAtRef=useRef(startedAt);const finalStartedRef=useRef(finalStarted);const finalPausedRef=useRef(finalPaused);
   const[syncStatus,setSyncStatus]=useState('idle');
   const[syncOpen,setSyncOpen]=useState(false);
-  const pushTimer=useRef(null);
-  const mounted=useRef(true);
-  const lastUpdated=useRef('');
-  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
-  useEffect(()=>{localStorage.setItem(STARTED_KEY,JSON.stringify(started));},[started]);
-  useEffect(()=>{localStorage.setItem(PAUSED_KEY,JSON.stringify(paused));},[paused]);
-  useEffect(()=>{localStorage.setItem(ELAPSED_KEY,JSON.stringify(elapsed));localStorage.setItem(ELAPSED_TS_KEY,JSON.stringify(Date.now()));},[elapsed]);
+  const statePushTimer=useRef(null);const boardsPushTimer=useRef(null);const mounted=useRef(true);
+  const lastStateUpdate=useRef('');const[semiRefreshSeeds,setSemiRefreshSeeds]=useState([0,0]);const[finalRefreshSeed,setFinalRefreshSeed]=useState(0);
+  useEffect(()=>{semisRef.current=semis;},[semis]);
+  useEffect(()=>{finalGamesRef.current=finalGames;},[finalGames]);
+  useEffect(()=>{startedRef.current=started;},[started]);
+  useEffect(()=>{pausedRef.current=paused;},[paused]);
+  useEffect(()=>{startedAtRef.current=startedAt;},[startedAt]);
+  useEffect(()=>{finalStartedRef.current=finalStarted;},[finalStarted]);
+  useEffect(()=>{finalPausedRef.current=finalPaused;},[finalPaused]);
   useEffect(()=>{elapsedRef.current=elapsed;},[elapsed]);
-  useEffect(()=>{localStorage.setItem(STARTED_AT_KEY,JSON.stringify(startedAt));},[startedAt]);
-  useEffect(()=>{localStorage.setItem(SEMIS_KEY,JSON.stringify(semis));},[semis]);
-  useEffect(()=>{localStorage.setItem(FINAL_GAMES_KEY,JSON.stringify(finalGames));},[finalGames]);
-  useEffect(()=>{localStorage.setItem(FINAL_STARTED_KEY,JSON.stringify(finalStarted));},[finalStarted]);
-  useEffect(()=>{localStorage.setItem(FINAL_PAUSED_KEY,JSON.stringify(finalPaused));},[finalPaused]);
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
 
-  function updateSemis(updater){
-    setSemis(prev=>{
-      const next=typeof updater==='function'?updater(prev):updater;
-      localStorage.setItem(SEMIS_KEY,JSON.stringify(next));
-      return next;
-    });
+  function getStateSnapshot(overrides={}){return{started:startedRef.current,paused:pausedRef.current,elapsed:elapsedRef.current,startedAt:startedAtRef.current,finalStarted:finalStartedRef.current,finalPaused:finalPausedRef.current,...overrides};}
+  async function pushStateNow(overrides={}){if(!mounted.current)return false;setSyncStatus('syncing');const ok=await pushTournamentState(getStateSnapshot(overrides));if(!mounted.current)return ok;setSyncStatus(ok?'ok':'error');setTimeout(()=>{if(mounted.current)setSyncStatus(s=>s!=='syncing'?'idle':s);},2000);return ok;}
+  async function pushBoardsNow(nextSemis=semisRef.current,nextFinalGames=finalGamesRef.current){if(!mounted.current)return false;setSyncStatus('syncing');const ok=await pushBoardsState(nextSemis,nextFinalGames);if(!mounted.current)return ok;setSyncStatus(ok?'ok':'error');setTimeout(()=>{if(mounted.current)setSyncStatus(s=>s!=='syncing'?'idle':s);},2000);return ok;}
+  function scheduleStatePush(overrides){clearTimeout(statePushTimer.current);statePushTimer.current=setTimeout(()=>{pushStateNow(overrides);},500);}
+  function scheduleBoardsPush(nextSemis,nextFinalGames){clearTimeout(boardsPushTimer.current);boardsPushTimer.current=setTimeout(()=>{pushBoardsNow(nextSemis,nextFinalGames);},500);}
+
+  function applyTournamentStateRow(row){
+    if(!row||!mounted.current)return;
+    if(row.updated_at&&lastStateUpdate.current&&row.updated_at<=lastStateUpdate.current)return;
+    lastStateUpdate.current=row.updated_at||new Date().toISOString();
+    const remoteStarted=!!row.started;
+    const remotePaused=!!row.paused;
+    const remoteStartedAt=row.started_at?Date.parse(row.started_at):null;
+    const refTs=remoteStartedAt||Date.now();
+    const drift=(remoteStarted&&!remotePaused)?Math.max(0,Math.floor((Date.now()-refTs)/1000)):0;
+    setStarted(remoteStarted);
+    setPaused(remotePaused);
+    setStartedAt(remoteStartedAt);
+    setElapsed((row.elapsed||0)+drift);
+    setFinalStarted(!!row.final_started);
+    setFinalPaused(!!row.final_paused);
+  }
+  async function refreshBoards(){
+    const rows=await pullBoardsState();
+    if(!mounted.current)return;
+    setSemis(applyBoardRows(INIT(),rows));
+    const finalRow=extractFinalRow(rows);
+    setFinalGames(Array.isArray(finalRow?.games)?finalRow.games:[]);
+  }
+  async function refreshPolls(){
+    const data=await pullPollVotes(viewerIdRef.current);
+    if(!mounted.current)return;
+    setPolls(data.polls||{});
+    setViewerVotes(data.viewerVotes||{});
   }
 
-  function getSnapshot(overrides={}){
-    return{
-      semis:semis.map(m=>({...m,boards:m.boards.map(b=>({...b}))})),
-      finalGames,finalStarted,finalPaused,
-      started,paused,elapsed,startedAt,
-      polls:loadPolls(),voted:loadVoted(),
-      elapsedTs:Date.now(),
-      _ts:Date.now(),
-      ...overrides,
-    };
-  }
-
-  function applySnapshot(snap){
-    if(!snap||!mounted.current)return;
-    if(snap._ts&&snap._ts<=lastUpdated.current)return;
-    lastUpdated.current=snap._ts||Date.now();
-    if(snap.semis){updateSemis(snap.semis);localStorage.setItem(SEMIS_KEY,JSON.stringify(snap.semis));}
-    if(snap.finalGames!==undefined){setFinalGames(snap.finalGames);localStorage.setItem(FINAL_GAMES_KEY,JSON.stringify(snap.finalGames));}
-    if(snap.finalStarted!==undefined){setFinalStarted(snap.finalStarted);localStorage.setItem(FINAL_STARTED_KEY,JSON.stringify(snap.finalStarted));}
-    if(snap.finalPaused!==undefined){setFinalPaused(snap.finalPaused);localStorage.setItem(FINAL_PAUSED_KEY,JSON.stringify(snap.finalPaused));}
-    const nextStarted=snap.started!==undefined?snap.started:started;
-    const nextPaused=snap.paused!==undefined?snap.paused:paused;
-    if(snap.started!==undefined)setStarted(snap.started);
-    if(snap.paused!==undefined)setPaused(snap.paused);
-    if(snap.elapsed!==undefined){
-      const refTs=snap.elapsedTs||snap._ts||Date.now();
-      const drift=(nextStarted&&!nextPaused)?Math.max(0,Math.floor((Date.now()-refTs)/1000)):0;
-      const syncedElapsed=(snap.elapsed||0)+drift;
-      setElapsed(syncedElapsed);
-      localStorage.setItem(ELAPSED_KEY,JSON.stringify(syncedElapsed));
-      localStorage.setItem(ELAPSED_TS_KEY,JSON.stringify(Date.now()));
-    }
-    if(snap.startedAt!==undefined)setStartedAt(snap.startedAt);
-    if(snap.polls){savePolls(snap.polls);setPollsVersion(v=>v+1);}
-    if(snap.voted)saveVoted(snap.voted);
-  }
-
-  /* Push — admin only, debounced 600ms */
-  async function pushNow(overrides){
-    if(!mounted.current)return false;
-    setSyncStatus('syncing');
-    const ok=await pushTournament(getSnapshot(overrides));
-    if(!mounted.current)return ok;
-    setSyncStatus(ok?'ok':'error');
-    setTimeout(()=>{if(mounted.current)setSyncStatus(s=>s!=='syncing'?'idle':s);},2000);
-    return ok;
-  }
-
-  function schedulePush(overrides){
-    clearTimeout(pushTimer.current);
-    pushTimer.current=setTimeout(async()=>{
-      await pushNow(overrides);
-    },600);
-  }
-
-  /* Subscribe to real-time changes on mount */
   useEffect(()=>{
-    // Pull initial state
-    pullTournament().then(snap=>{if(snap)applySnapshot(snap);});
+    (async()=>{
+      const[stateRow]=await Promise.all([pullTournamentState(),refreshBoards(),refreshPolls()]);
+      if(stateRow)applyTournamentStateRow(stateRow);
+    })();
 
-    // Subscribe to real-time updates
-    const channel=subscribeToTournament(
-      snap=>{ if(mounted.current) applySnapshot(snap); },
-      (status)=>{
-        if(!mounted.current) return;
-        if(status==='SUBSCRIBED') setSyncStatus('ok');
-        else if(status==='CHANNEL_ERROR' || status==='TIMED_OUT') setSyncStatus('error');
-      }
-    );
+    const stateChannel=subscribeToTournamentState(row=>{if(mounted.current)applyTournamentStateRow(row);},status=>{if(!mounted.current)return;if(status==='SUBSCRIBED')setSyncStatus('ok');else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT')setSyncStatus('error');});
+    const boardsChannel=subscribeToBoards(()=>{if(mounted.current)refreshBoards();},status=>{if(!mounted.current)return;if(status==='CHANNEL_ERROR'||status==='TIMED_OUT')setSyncStatus('error');});
+    const pollsChannel=subscribeToPollVotes(()=>{if(mounted.current)refreshPolls();},status=>{if(!mounted.current)return;if(status==='CHANNEL_ERROR'||status==='TIMED_OUT')setSyncStatus('error');});
 
-    // Fallback pull for environments where realtime is blocked
     const pullInterval=setInterval(async()=>{
-      const snap=await pullTournament();
-      if(snap&&mounted.current)applySnapshot(snap);
+      const[stateRow]=await Promise.all([pullTournamentState(),refreshBoards(),refreshPolls()]);
+      if(stateRow&&mounted.current)applyTournamentStateRow(stateRow);
     },15000);
 
     return()=>{
-      clearInterval(pullInterval);
-      if(supabase) supabase.removeChannel(channel);
+      clearInterval(pullInterval);clearTimeout(statePushTimer.current);clearTimeout(boardsPushTimer.current);
+      if(supabase){supabase.removeChannel(stateChannel);supabase.removeChannel(boardsChannel);supabase.removeChannel(pollsChannel);}
     };
   },[]);
 
@@ -757,31 +833,47 @@ function App(){
     if(started&&!paused){
       if(timerRef.current)clearInterval(timerRef.current);
       timerRef.current=setInterval(()=>setElapsed(e=>e+1),1000);
-    }else{
-      clearInterval(timerRef.current);
-      timerRef.current=null;
-    }
+    }else{clearInterval(timerRef.current);timerRef.current=null;}
     return()=>{clearInterval(timerRef.current);timerRef.current=null;};
   },[started,paused]);
 
   useEffect(()=>{
     if(!started||paused)return;
-    const id=setInterval(()=>{schedulePush({elapsed:elapsedRef.current,elapsedTs:Date.now()});},10000);
+    const id=setInterval(()=>{scheduleStatePush({elapsed:elapsedRef.current});},10000);
     return()=>clearInterval(id);
   },[started,paused]);
 
-  function handleStart(){const ts=Date.now();setStarted(true);setPaused(false);setStartedAt(ts);localStorage.setItem(ELAPSED_TS_KEY,JSON.stringify(ts));pushNow({started:true,paused:false,startedAt:ts,elapsedTs:ts});}
-  function handlePause(){setPaused(true);schedulePush();}
-  function handleResume(){const ts=Date.now();setPaused(false);localStorage.setItem(ELAPSED_TS_KEY,JSON.stringify(ts));pushNow({paused:false,elapsedTs:ts});}
-  function handleResetScores(){updateSemis(prev=>prev.map(m=>({...m,boards:m.boards.map(b=>({...b,games:[]}))})));setFinalGames([]);setFinalStarted(false);setFinalPaused(false);schedulePush();}
-  function handleResetAll(){setStarted(false);setPaused(false);setElapsed(0);setStartedAt(null);updateSemis(INIT());setFinalGames([]);setFinalStarted(false);setFinalPaused(false);schedulePush();}
+  function updateSemis(updater){
+    setSemis(prev=>{
+      const next=typeof updater==='function'?updater(prev):updater;
+      semisRef.current=next;
+      scheduleBoardsPush(next,finalGamesRef.current);
+      return next;
+    });
+  }
+  function setFinalGamesAndSync(updater){
+    setFinalGames(prev=>{
+      const next=typeof updater==='function'?updater(prev):updater;
+      finalGamesRef.current=next;
+      scheduleBoardsPush(semisRef.current,next);
+      return next;
+    });
+  }
+
+  function handleStart(){const ts=Date.now();setStarted(true);setPaused(false);setStartedAt(ts);startedRef.current=true;pausedRef.current=false;startedAtRef.current=ts;pushStateNow({started:true,paused:false,startedAt:ts,elapsed:elapsedRef.current});pushBoardsNow();}
+  function handlePause(){setPaused(true);pausedRef.current=true;scheduleStatePush({paused:true});}
+  function handleResume(){setPaused(false);pausedRef.current=false;scheduleStatePush({paused:false});}
+  function handleResetScores(){updateSemis(prev=>prev.map(m=>({...m,boards:m.boards.map(b=>({...b,games:[],paused:false}))})));setFinalGamesAndSync([]);setFinalStarted(false);setFinalPaused(false);finalStartedRef.current=false;finalPausedRef.current=false;scheduleStatePush({finalStarted:false,finalPaused:false});}
+  function handleResetAll(){setStarted(false);setPaused(false);setElapsed(0);setStartedAt(null);startedRef.current=false;pausedRef.current=false;startedAtRef.current=null;elapsedRef.current=0;setSemis(INIT());semisRef.current=INIT();setFinalGames([]);finalGamesRef.current=[];setFinalStarted(false);finalStartedRef.current=false;setFinalPaused(false);finalPausedRef.current=false;pushStateNow({started:false,paused:false,elapsed:0,startedAt:null,finalStarted:false,finalPaused:false});pushBoardsNow(INIT(),[]);}
 
   const w0=mWinner(semis[0]),w1=mWinner(semis[1]);
   const[fs1,fs2]=bScore({games:finalGames});const fWin=fs1>=2.5?w0:fs2>=2.5?w1:null;
   useEffect(()=>{if(fWin&&fWin.name!==prevW.current){prevW.current=fWin.name;setConfetti(true);setTimeout(()=>setConfetti(false),5500);}},[fWin]);
 
-  const updGames=(si,n,games)=>{updateSemis(prev=>prev.map((m,i)=>i!==si?m:{...m,boards:m.boards.map(b=>b.n!==n?b:{...b,games})}));schedulePush();};
-  const setTime=(si,n,dt)=>{updateSemis(prev=>prev.map((m,i)=>i!==si?m:{...m,boards:m.boards.map(b=>b.n!==n?b:{...b,scheduledAt:dt})}));schedulePush();};
+  const updGames=(si,n,games)=>{updateSemis(prev=>prev.map((m,i)=>i!==si?m:{...m,boards:m.boards.map(b=>b.n!==n?b:{...b,games})}));};
+  const setTime=(si,n,dt)=>{updateSemis(prev=>prev.map((m,i)=>i!==si?m:{...m,boards:m.boards.map(b=>b.n!==n?b:{...b,scheduledAt:dt})}));};
+  const setBoardPause=(si,n,isPaused)=>{updateSemis(prev=>prev.map((m,i)=>i!==si?m:{...m,boards:m.boards.map(b=>b.n!==n?b:{...b,paused:isPaused})}));};
+  async function handlePollVote(vote){setPollSubmitting(true);const ok=await upsertPollVote({poll_key:vote.bk,voter_id:viewerIdRef.current,voter_name:vote.voter_name,winner_vote:vote.winner_vote,score_vote:vote.score_vote});if(ok)await refreshPolls();setPollSubmitting(false);return ok;}
   const tabC=['var(--kb)','var(--or)','var(--gold)'];
 
   return(
@@ -789,7 +881,6 @@ function App(){
       <Confetti active={confetti}/>
       <button className={'admin-lock'+(admin?' on':'')} onClick={()=>setAdminOpen(true)}><span style={{fontSize:13}}>{admin?'🔓':'🔒'}</span><span>{admin?'Admin actif':'Admin'}</span></button>
       <AdminModal open={adminOpen} admin={admin} onClose={()=>setAdminOpen(false)} onLogin={login} onLogout={logout}/>
-      {/* SUPABASE SYNC STATUS */}
       <button className={'sync-bar'+(syncStatus==='ok'?' active':syncStatus==='syncing'?' syncing':'')} onClick={()=>setSyncOpen(true)} title="Synchronisation Supabase temps réel">
         <span style={{fontSize:12}}>{syncStatus==='syncing'?'🔄':syncStatus==='ok'?'⚡':syncStatus==='error'?'🔴':'🔗'}</span>
         <span>{syncStatus==='syncing'?'Sync…':syncStatus==='ok'?'Live ⚡':'Sync'}</span>
@@ -807,7 +898,7 @@ function App(){
           <div style={{fontFamily:'Cinzel Decorative,serif',fontSize:'clamp(15px,3.8vw,26px)',color:'var(--gold)',letterSpacing:'.08em',marginBottom:2,animation:'fid .6s ease both'}}>Ivoire Chess Club</div>
           <div style={{fontFamily:'Cinzel,serif',fontSize:9,color:'var(--txt3)',letterSpacing:'.5em',textTransform:'uppercase',marginBottom:8}}>Tournoi par Équipes · Chess.com · Côte d'Ivoire</div>
           <h1 style={{margin:'0 0 4px',fontFamily:'Cinzel Decorative,serif',fontSize:'clamp(20px,5.5vw,42px)',fontWeight:'900',background:'linear-gradient(135deg,var(--gold),var(--or),var(--gold))',backgroundSize:'200% auto',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',animation:'shim 4s linear infinite',letterSpacing:'.04em'}}>Demi-Finales</h1>
-          <div style={{fontSize:11,color:'var(--txt3)',marginBottom:5,fontStyle:'italic'}}>Best of 4 · Semi-auto via Chess.com · Sondages ouverts</div>
+          <div style={{fontSize:11,color:'var(--txt3)',marginBottom:5,fontStyle:'italic'}}>Best of 4 · Sync Supabase temps réel · Sondages en ligne</div>
           <div style={{fontSize:16,marginBottom:16}}>🇨🇮</div>
           <div style={{display:'flex',justifyContent:'center',flexWrap:'wrap',gap:4,marginBottom:18,maxWidth:480,margin:'0 auto 18px'}}>
             {[...INIT()[0].boards,...INIT()[1].boards].flatMap((b,bi)=>[{u:b.p1,i:bi*2},{u:b.p2,i:bi*2+1}]).map(({u,i})=>(<div key={i} title={u} style={{animation:`fid .4s ${i*.04}s ease both`}}><Avatar username={u} size={28} color={i<8?'#0077CC':'#1A7A3C'}/></div>))}
@@ -822,14 +913,15 @@ function App(){
         {[semis[0].title,semis[1].title,'🏆 Bracket'].map((label,i)=>{const a=tab===i;return(<button key={i} onClick={()=>setTab(i)} style={{background:a?'var(--bg)':'none',border:'none',borderBottom:a?`2.5px solid ${tabC[i]}`:'2.5px solid transparent',color:a?tabC[i]:'var(--txt3)',padding:'12px 17px 10px',fontFamily:'Cinzel,serif',fontSize:11,fontWeight:a?'700':'400',letterSpacing:'.06em',textTransform:'uppercase',whiteSpace:'nowrap'}}>{label}</button>);})}
       </div>
       <div style={{padding:'20px 14px 0',minHeight:'60vh',animation:'fi .4s ease both'}}>
-        {tab<2?(<SemiView match={semis[tab]} started={started} paused={paused} admin={admin} onGames={(n,g)=>updGames(tab,n,g)} onTime={(n,dt)=>setTime(tab,n,dt)} onRefresh={()=>{}} startedAt={startedAt} pollsVersion={pollsVersion} onPollVote={()=>{setPollsVersion(v=>v+1);schedulePush();}}/>
-        ):(<div style={{maxWidth:960,margin:'0 auto'}}><Bracket semis={semis} finalGames={finalGames} onFinalGames={(g)=>{setFinalGames(g);schedulePush();}} finalStarted={finalStarted} finalPaused={finalPaused} onFStart={()=>{setFinalStarted(true);schedulePush();}} onFPause={()=>{setFinalPaused(true);schedulePush();}} onFResume={()=>{setFinalPaused(false);schedulePush();}} admin={admin}/></div>)}
+        {tab<2?(<SemiView match={semis[tab]} started={started} paused={paused} admin={admin} onGames={(n,g)=>updGames(tab,n,g)} onTime={(n,dt)=>setTime(tab,n,dt)} onTogglePause={(n,isPaused)=>setBoardPause(tab,n,isPaused)} onRefresh={()=>setSemiRefreshSeeds(prev=>prev.map((v,i)=>i===tab?v+1:v))} startedAt={startedAt} polls={polls} viewerVotes={viewerVotes} onPollVote={handlePollVote} pollSubmitting={pollSubmitting} refreshSeed={semiRefreshSeeds[tab]}/>
+        ):(<div style={{maxWidth:960,margin:'0 auto'}}><Bracket semis={semis} finalGames={finalGames} onFinalGames={(g)=>setFinalGamesAndSync(g)} finalStarted={finalStarted} finalPaused={finalPaused} onFStart={()=>{setFinalStarted(true);finalStartedRef.current=true;scheduleStatePush({finalStarted:true});scheduleBoardsPush(semisRef.current,finalGamesRef.current);}} onFPause={()=>{setFinalPaused(true);finalPausedRef.current=true;scheduleStatePush({finalPaused:true});}} onFResume={()=>{setFinalPaused(false);finalPausedRef.current=false;scheduleStatePush({finalPaused:false});}} admin={admin} startedAt={startedAt} refreshSeed={finalRefreshSeed}/></div>)}
       </div>
       <div className="ks" style={{marginTop:52}}/>
       <div style={{textAlign:'center',padding:'10px',fontSize:9,color:'var(--txt3)',fontFamily:'Cinzel,serif',letterSpacing:'.25em',textTransform:'uppercase'}}>🇨🇮 Ivoire Chess Club · Tournoi par Équipes · Chess.com 🇨🇮</div>
     </div>
   );
 }
+
 ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 </script>
 </body>
