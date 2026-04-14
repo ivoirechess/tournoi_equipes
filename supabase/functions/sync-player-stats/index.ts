@@ -24,13 +24,23 @@ Deno.serve(async (req) => {
   for (const player of players ?? []) {
     const normalizedUsername = player.chess_username?.trim().toLowerCase();
     if (!normalizedUsername) continue;
-    const [statsRes, profileRes] = await Promise.all([
-      fetch(`https://api.chess.com/pub/player/${normalizedUsername}/stats`),
-      fetch(`https://api.chess.com/pub/player/${normalizedUsername}`),
-    ]);
-    if (!statsRes.ok) continue;
-    const stats = await statsRes.json();
-    const profile = profileRes.ok ? await profileRes.json() : {};
+    const candidates = [...new Set([player.chess_username?.trim(), normalizedUsername])].filter(Boolean) as string[];
+    let profile: any = {};
+    let stats: any = {};
+    let canonicalUsername = normalizedUsername;
+
+    for (const candidate of candidates) {
+      const [statsRes, profileRes] = await Promise.all([
+        fetch(`https://api.chess.com/pub/player/${encodeURIComponent(candidate)}/stats`),
+        fetch(`https://api.chess.com/pub/player/${encodeURIComponent(candidate)}`),
+      ]);
+      if (!statsRes.ok && !profileRes.ok) continue;
+      stats = statsRes.ok ? await statsRes.json() : {};
+      profile = profileRes.ok ? await profileRes.json() : {};
+      canonicalUsername = String(profile?.username || candidate).trim().toLowerCase();
+      break;
+    }
+    if (!Object.keys(stats).length && !Object.keys(profile).length) continue;
     const rapid = stats?.chess_rapid?.last?.rating ?? null;
     const blitz = stats?.chess_blitz?.last?.rating ?? null;
     const bullet = stats?.chess_bullet?.last?.rating ?? null;
@@ -49,6 +59,7 @@ Deno.serve(async (req) => {
         peak_blitz: peakBlitz,
         peak_bullet: peakBullet,
         peak_global: peakGlobal,
+        chess_username: canonicalUsername,
         avatar_url: profile?.avatar ?? null,
         chess_title: profile?.title ?? null,
         country_code: typeof profile?.country === 'string' ? profile.country.split('/').pop() ?? null : null,
