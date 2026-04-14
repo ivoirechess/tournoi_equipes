@@ -24,9 +24,13 @@ Deno.serve(async (req) => {
   for (const player of players ?? []) {
     const normalizedUsername = player.chess_username?.trim().toLowerCase();
     if (!normalizedUsername) continue;
-    const res = await fetch(`https://api.chess.com/pub/player/${normalizedUsername}/stats`);
-    if (!res.ok) continue;
-    const stats = await res.json();
+    const [statsRes, profileRes] = await Promise.all([
+      fetch(`https://api.chess.com/pub/player/${normalizedUsername}/stats`),
+      fetch(`https://api.chess.com/pub/player/${normalizedUsername}`),
+    ]);
+    if (!statsRes.ok) continue;
+    const stats = await statsRes.json();
+    const profile = profileRes.ok ? await profileRes.json() : {};
     const rapid = stats?.chess_rapid?.last?.rating ?? null;
     const blitz = stats?.chess_blitz?.last?.rating ?? null;
     const bullet = stats?.chess_bullet?.last?.rating ?? null;
@@ -45,6 +49,9 @@ Deno.serve(async (req) => {
         peak_blitz: peakBlitz,
         peak_bullet: peakBullet,
         peak_global: peakGlobal,
+        avatar_url: profile?.avatar ?? null,
+        chess_title: profile?.title ?? null,
+        country_code: typeof profile?.country === 'string' ? profile.country.split('/').pop() ?? null : null,
       })
       .eq('id', player.id);
   }

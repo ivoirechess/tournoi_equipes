@@ -90,7 +90,7 @@ Deno.serve(async (req) => {
       gpA += aIsWhite ? whiteScore : blackScore;
       gpB += aIsWhite ? blackScore : whiteScore;
 
-      await supabase.from('games').upsert({
+      const { error: upsertError } = await supabase.from('games').upsert({
         match_id,
         board_no: w.board_no,
         played_at: new Date(g.end_time * 1000).toISOString(),
@@ -102,7 +102,10 @@ Deno.serve(async (req) => {
         pgn: g.pgn,
         game_url: g.url,
         source_json: g,
-      });
+      }, { onConflict: 'match_id,board_no,game_url' });
+      if (upsertError) {
+        return Response.json({ ok: false, error: `Erreur upsert game: ${upsertError.message}` }, { status: 400, headers: corsHeaders });
+      }
     }
 
     await supabase
