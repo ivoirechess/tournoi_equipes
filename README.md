@@ -9,7 +9,14 @@ Application statique premium pour gérer un tournoi d'échecs par équipes : int
 
 ## Déploiement rapide
 1. Créer un projet Supabase.
-2. Exécuter `supabase/migrations/001_init.sql`, `002_seed_matches.sql`, puis `003_scoring_recompute.sql`.
+2. Exécuter les migrations dans l'ordre:
+   - `001_init.sql`
+   - `002_seed_matches.sql`
+   - `003_scoring_recompute.sql`
+   - `005_fix_admin_table_permissions.sql`
+   - `006_hardening_idempotent.sql`
+   - `007_players_chesscom_profile_fields.sql`
+   > `004_supabase_complet_v2.sql` est optionnelle et concerne les tables "ligue" avancées.
 3. Déployer les edge functions:
    - `supabase functions deploy sync-player-stats`
    - `supabase functions deploy sync-chess-games`
@@ -27,6 +34,7 @@ Application statique premium pour gérer un tournoi d'échecs par équipes : int
 - Support départage capitaines via table `captain_tiebreak_sets`.
 - Import des 4 parties rapides/échiquier depuis Chess.com sur plage horaire admin.
 - Profil joueurs avec rapid/blitz/bullet + pics ELO.
+- Récupération Chess.com enrichie: avatars, titre et pays des joueurs.
 - Force d'équipe via vue `team_strength`.
 
 ## Sécurité

@@ -158,6 +158,24 @@ tr:nth-child(even) { background: #ffffff07; }
 
 .team-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: .8rem; }
 .team-card { border: 1px solid var(--card-border); border-radius: 14px; padding: .8rem; background: linear-gradient(130deg, #ffffff15, transparent); }
+.team-showcase { display: grid; grid-template-columns: repeat(auto-fit,minmax(270px,1fr)); gap: .8rem; }
+.showcase-card { border: 1px solid var(--card-border); border-radius: 14px; padding: .8rem; background: linear-gradient(130deg, #ffffff15, transparent); }
+.showcase-head { display: flex; gap: .65rem; align-items: center; margin-bottom: .6rem; }
+.avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--card-border);
+  background: #ffffff12;
+}
+.avatar.fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+.showcase-list { margin: 0; padding-left: 1.1rem; color: var(--muted); }
 .badge { background: #f7b50030; color: #ffd479; border-radius: 99px; padding: .15rem .5rem; font-size: .76rem; }
 .muted { color: var(--muted); margin: .2rem 0; }
 

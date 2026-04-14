@@ -8,6 +8,7 @@ const els = {
   matches: document.getElementById('matches'),
   bracket: document.getElementById('bracket'),
   teams: document.getElementById('teams'),
+  teamShowcase: document.getElementById('team-showcase'),
   players: document.getElementById('players'),
   authForm: document.getElementById('auth-form'),
   authState: document.getElementById('auth-state'),
@@ -88,12 +89,16 @@ async function requireAuthenticatedAdminAction() {
 }
 
 async function loadPublic() {
-  const [{ data: standings }, { data: matches }, { data: teams }, { data: players }] = await Promise.all([
+  const [{ data: standings, error: standingsError }, { data: matches, error: matchesError }, { data: teams, error: teamsError }, { data: players, error: playersError }] = await Promise.all([
     supabase.from('standings').select('*').order('pool').order('rank_in_pool'),
     supabase.from('matches').select('*,team_a:teams!matches_team_a_id_fkey(name),team_b:teams!matches_team_b_id_fkey(name)').order('scheduled_at'),
     supabase.from('team_strength').select('*').order('strength_score', { ascending: false }),
-    supabase.from('players').select('id,display_name,chess_username,is_captain,team_id,rapid_rating,blitz_rating,bullet_rating,peak_rapid,peak_blitz,peak_bullet,peak_global,teams(name)').order('display_name'),
+    supabase.from('players').select('id,display_name,chess_username,is_captain,team_id,rapid_rating,blitz_rating,bullet_rating,peak_rapid,peak_blitz,peak_bullet,peak_global,avatar_url,chess_title,country_code,teams(name)').order('display_name'),
   ]);
+  const firstError = standingsError || matchesError || teamsError || playersError;
+  if (firstError) {
+    setAdminState(`❌ Chargement impossible: ${firstError.message}`, true);
+  }
 
   els.standings.classList.remove('skeleton');
   els.standings.innerHTML = !standings?.length
@@ -138,6 +143,51 @@ async function loadPublic() {
   renderTeamDnD(teams || [], players || []);
   renderAdminRosters(teams || [], players || []);
   renderSwapRecommendations(teams || [], players || []);
+  renderTeamShowcase(teams || [], players || []);
+}
+
+function initials(name) {
+  const parts = (name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2);
+  return parts.length ? parts.map((part) => part[0]).join('').toUpperCase() : '♟️';
+}
+
+function avatarHTML(player, sizeClass = '') {
+  if (player?.avatar_url) {
+    return `<img class="avatar ${sizeClass}" src="${player.avatar_url}" alt="Photo de ${player.display_name}" loading="lazy" />`;
+  }
+  return `<span class="avatar fallback ${sizeClass}" aria-hidden="true">${initials(player?.display_name || '')}</span>`;
+}
+
+function renderTeamShowcase(teams, players) {
+  if (!els.teamShowcase) return;
+  els.teamShowcase.classList.remove('skeleton');
+  if (!teams.length) {
+    els.teamShowcase.innerHTML = '<p class="muted">Aucune équipe à afficher pour le moment.</p>';
+    return;
+  }
+  const cards = teams.map((team) => {
+    const roster = players.filter((p) => p.team_id === team.team_id);
+    const captain = roster.find((p) => p.is_captain) || roster[0] || null;
+    const topPlayers = [...roster]
+      .sort((a, b) => Number(b.peak_global || b.peak_rapid || b.rapid_rating || 0) - Number(a.peak_global || a.peak_rapid || a.rapid_rating || 0))
+      .slice(0, 3);
+    const avgRapid = roster.reduce((sum, p) => sum + Number(p.rapid_rating || 0), 0) / Math.max(roster.length, 1);
+    return `<article class="showcase-card">
+      <div class="showcase-head">
+        ${captain ? avatarHTML(captain) : '<span class="avatar fallback" aria-hidden="true">♟️</span>'}
+        <div>
+          <h3>${team.team_name}</h3>
+          <p class="muted">Capitaine: ${captain?.display_name || 'Non défini'}</p>
+        </div>
+      </div>
+      <p><b>Force équipe</b>: ${Math.round(team.strength_score || 0)}</p>
+      <p><b>Moyenne rapid</b>: ${Math.round(avgRapid || 0)}</p>
+      <p><b>Effectif</b>: ${roster.length} joueur(s)</p>
+      <p class="muted">Top joueurs</p>
+      <ul class="showcase-list">${topPlayers.map((player) => `<li>${player.display_name}${player.chess_title ? ` (${player.chess_title})` : ''} · peak ${player.peak_global ?? player.peak_rapid ?? '-'}</li>`).join('') || '<li>-</li>'}</ul>
+    </article>`;
+  });
+  els.teamShowcase.innerHTML = cards.join('');
 }
 
 function renderTeamDnD(teams, players) {
@@ -185,6 +235,7 @@ function renderTeamDnD(teams, players) {
       const target = zone.dataset.teamDrop;
       if (!playerId || !target) return;
       const teamId = target === 'substitutes' ? null : Number(target);
+      if (!(await requireAuthenticatedAdminAction())) return;
       const { error } = await supabase.from('players').update({ team_id: teamId }).eq('id', playerId);
       if (error) {
         setAdminState(`❌ Transfert impossible: ${error.message}`, true);
@@ -312,20 +363,27 @@ function renderAdminRosters(teams, players) {
   }${teams.map((t) => `<tr><td>${t.team_name}</td><td colspan="2">-</td><td><button data-del-team="${t.team_id}">Supprimer équipe</button></td></tr>`).join('')}</tbody></table>`;
   for (const b of els.rosterBox.querySelectorAll('[data-del-player]')) {
     b.onclick = async () => {
-      await supabase.from('players').delete().eq('id', Number(b.dataset.delPlayer));
-      loadPublic();
+      if (!(await requireAuthenticatedAdminAction())) return;
+      const { error } = await supabase.from('players').delete().eq('id', Number(b.dataset.delPlayer));
+      if (error) return setAdminState(`❌ Suppression joueur impossible: ${error.message}`, true);
+      await loadPublic();
     };
   }
   for (const b of els.rosterBox.querySelectorAll('[data-del-team]')) {
     b.onclick = async () => {
-      await supabase.from('teams').delete().eq('id', Number(b.dataset.delTeam));
-      loadPublic();
+      if (!(await requireAuthenticatedAdminAction())) return;
+      const { error } = await supabase.from('teams').delete().eq('id', Number(b.dataset.delTeam));
+      if (error) return setAdminState(`❌ Suppression équipe impossible: ${error.message}`, true);
+      await loadPublic();
     };
   }
 }
 
 async function loadAdminGames() {
-  const { data } = await supabase.from('games').select('id,match_id,board_no,played_at,white_username,black_username,result,excluded,game_url').order('played_at', { ascending: false }).limit(30);
+  const { data, error } = await supabase.from('games').select('id,match_id,board_no,played_at,white_username,black_username,result,excluded,game_url').order('played_at', { ascending: false }).limit(30);
+  if (error) {
+    setAdminState(`❌ Impossible de charger les parties: ${error.message}`, true);
+  }
   els.adminGames.innerHTML = `<table><thead><tr><th>Board</th><th>Partie</th><th>Résultat</th><th>Exclure</th></tr></thead><tbody>${(data || [])
     .map(
       (g) => `<tr><td>M${g.match_id} / #${g.board_no}</td><td><a href="${g.game_url}" target="_blank" rel="noreferrer">${g.white_username} vs ${g.black_username}</a></td><td>${g.result}</td><td><button data-exclude="${g.id}">${g.excluded ? 'Inclure' : 'Exclure'}</button></td></tr>`,
@@ -333,11 +391,14 @@ async function loadAdminGames() {
     .join('')}</tbody></table>`;
   for (const b of els.adminGames.querySelectorAll('[data-exclude]')) {
     b.onclick = async () => {
+      if (!(await requireAuthenticatedAdminAction())) return;
       const id = Number(b.dataset.exclude);
-      const { data: game } = await supabase.from('games').select('excluded').eq('id', id).single();
-      await supabase.from('games').update({ excluded: !game.excluded }).eq('id', id);
-      loadAdminGames();
-      loadPublic();
+      const { data: game, error: gameError } = await supabase.from('games').select('excluded').eq('id', id).single();
+      if (gameError) return setAdminState(`❌ Lecture partie impossible: ${gameError.message}`, true);
+      const { error: updateError } = await supabase.from('games').update({ excluded: !game.excluded }).eq('id', id);
+      if (updateError) return setAdminState(`❌ Mise à jour partie impossible: ${updateError.message}`, true);
+      await loadAdminGames();
+      await loadPublic();
     };
   }
 }
@@ -383,18 +444,24 @@ els.playerForm.addEventListener('submit', async (e) => {
 });
 
 els.drawGroups.onclick = async () => {
-  const { data: teams } = await supabase.from('teams').select('id');
+  if (!(await requireAuthenticatedAdminAction())) return;
+  const { data: teams, error } = await supabase.from('teams').select('id');
+  if (error) return setAdminState(`❌ Impossible de charger les équipes: ${error.message}`, true);
   const shuffled = [...teams].sort(() => Math.random() - 0.5);
   const updates = shuffled.map((t, i) => supabase.from('teams').update({ pool: i < 3 ? 'A' : 'B' }).eq('id', t.id));
-  await Promise.all(updates);
+  const results = await Promise.all(updates);
+  const firstError = results.find((result) => result.error)?.error;
+  if (firstError) return setAdminState(`❌ Tirage des poules échoué: ${firstError.message}`, true);
   alert('Poule A/B re-tirées');
-  loadPublic();
+  await loadPublic();
 };
 
 els.generatePlayoffs.onclick = async () => {
-  const { data } = await supabase.rpc('generate_playoff_matches');
+  if (!(await requireAuthenticatedAdminAction())) return;
+  const { data, error } = await supabase.rpc('generate_playoff_matches');
+  if (error) return setAdminState(`❌ Génération phase finale impossible: ${error.message}`, true);
   alert(data || 'Phases finales générées');
-  loadPublic();
+  await loadPublic();
 };
 
 els.syncElo.onclick = async () => {
@@ -409,12 +476,14 @@ els.syncElo.onclick = async () => {
 
 els.windowForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  await supabase.from('board_windows').upsert({
+  if (!(await requireAuthenticatedAdminAction())) return;
+  const { error } = await supabase.from('board_windows').upsert({
     match_id: Number(els.windowMatch.value),
     board_no: Number(document.getElementById('window-board').value),
     start_at: new Date(document.getElementById('window-start').value).toISOString(),
     end_at: new Date(document.getElementById('window-end').value).toISOString(),
   });
+  if (error) return setAdminState(`❌ Sauvegarde intervalle impossible: ${error.message}`, true);
   alert('Intervalle sauvegardé');
 });
 
@@ -437,7 +506,8 @@ els.syncGames.onclick = async () => {
 
 els.overrideForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  await supabase
+  if (!(await requireAuthenticatedAdminAction())) return;
+  const { error } = await supabase
     .from('matches')
     .update({
       score_a: Number(document.getElementById('override-score-a').value),
@@ -448,8 +518,9 @@ els.overrideForm.addEventListener('submit', async (e) => {
       status: 'validated',
     })
     .eq('id', Number(els.overrideMatch.value));
+  if (error) return setAdminState(`❌ Override impossible: ${error.message}`, true);
   alert('Override appliqué');
-  loadPublic();
+  await loadPublic();
 });
 
 els.refreshPublic.onclick = loadPublic;
