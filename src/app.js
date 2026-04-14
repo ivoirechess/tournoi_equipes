@@ -831,11 +831,16 @@ els.syncGames.onclick = async () => {
     return;
   }
   showToast('⏳ Import des parties en cours...');
-  const { error } = await supabase.functions.invoke('sync-chess-games', {
+  const { data, error } = await supabase.functions.invoke('sync-chess-games', {
     body: { match_id: Number(els.windowMatch.value), max_games_per_board: 4 },
   });
   if (error) return setAdminState(`❌ Erreur import parties: ${error.message}`, true);
-  showToast('✅ Parties importées');
+  const imported = Number(data?.imported_games ?? 0);
+  const skippedBoards = Number(data?.skipped_boards ?? 0);
+  showToast(`✅ Parties importées (${imported})${skippedBoards ? ` · boards ignorés: ${skippedBoards}` : ''}`);
+  if (Array.isArray(data?.board_errors) && data.board_errors.length) {
+    setAdminState(`⚠️ ${data.board_errors.join(' | ')}`, true);
+  }
   await loadAdminGames();
   await loadPublic();
 };
