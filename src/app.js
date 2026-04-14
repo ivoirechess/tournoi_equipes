@@ -36,6 +36,8 @@ const els = {
   mobileMenuBtn: document.getElementById('mobile-menu-btn'),
   topNav: document.getElementById('top-nav'),
   toast: document.getElementById('toast'),
+  clubLogo: document.getElementById('club-logo'),
+  clubLogoFallback: document.getElementById('club-logo-fallback'),
 };
 const state = {
   teams: [],
@@ -168,15 +170,14 @@ function computeFallbackStandings(teams, matches) {
 function computeFallbackTeamStrength(teams, players) {
   return (teams || []).map((team) => {
     const roster = (players || []).filter((player) => player.team_id === team.id);
+    const sumPeakGlobal = roster.reduce((sum, p) => sum + Number(p.peak_global ?? p.peak_rapid ?? p.rapid_rating ?? 0), 0);
     const avgPeakRapid = roster.reduce((sum, p) => sum + Number(p.peak_rapid ?? p.rapid_rating ?? 0), 0) / Math.max(roster.length, 1);
-    const avgPeakBlitz = roster.reduce((sum, p) => sum + Number(p.peak_blitz ?? p.blitz_rating ?? 0), 0) / Math.max(roster.length, 1);
-    const avgPeakBullet = roster.reduce((sum, p) => sum + Number(p.peak_bullet ?? p.bullet_rating ?? 0), 0) / Math.max(roster.length, 1);
     return {
       team_id: team.id,
       team_name: team.name,
       avg_peak_rapid: avgPeakRapid,
-      sum_peak_global: roster.reduce((sum, p) => sum + Number(p.peak_global ?? p.peak_rapid ?? p.rapid_rating ?? 0), 0),
-      strength_score: avgPeakRapid * 0.6 + avgPeakBlitz * 0.25 + avgPeakBullet * 0.15,
+      sum_peak_global: sumPeakGlobal,
+      strength_score: sumPeakGlobal,
     };
   });
 }
@@ -223,9 +224,17 @@ async function loadPublic() {
 
   els.teams.classList.remove('skeleton');
   const avgStrength = teams.reduce((s, t) => s + Number(t.strength_score || 0), 0) / Math.max(teams.length, 1);
+  const maxStrength = Math.max(...teams.map((t) => Number(t.strength_score || 0)), 1);
   els.teams.innerHTML = (teams || [])
     .map(
-      (t) => `<div class="team-card"><h3>${t.team_name}</h3><p>Force équipe: <b>${Math.round(t.strength_score || 0)}</b></p><p>Moy. peak rapid: ${Math.round(t.avg_peak_rapid || 0)}</p><p>Total peak global: ${Math.round(t.sum_peak_global || 0)}</p><p>Écart vs moyenne: ${(Number(t.strength_score || 0) - avgStrength).toFixed(1)}</p></div>`,
+      (t) => `<div class="team-card">
+        <h3>${t.team_name}</h3>
+        <div class="stat-row"><span>Force équipe</span><b>${Math.round(t.strength_score || 0)} ELO</b></div>
+        <div class="strength-bar"><div class="strength-bar-fill" style="width:${Math.min(100, (Number(t.strength_score || 0) / maxStrength) * 100)}%"></div></div>
+        <div class="stat-row"><span>Moyenne peak rapid</span><b>${Math.round(t.avg_peak_rapid || 0)}</b></div>
+        <div class="stat-row"><span>Total peak global</span><b>${Math.round(t.sum_peak_global || 0)}</b></div>
+        <div class="stat-row"><span>Écart vs moyenne</span><b>${(Number(t.strength_score || 0) - avgStrength).toFixed(1)}</b></div>
+      </div>`,
     )
     .join('');
 
@@ -272,20 +281,33 @@ function sanitizeChessUsername(rawValue) {
 }
 
 async function fetchChessProfile(rawUsername) {
-  const lower = sanitizeChessUsername(rawUsername);
-  if (!lower) return null;
-  if (state.chessCache.has(lower)) return state.chessCache.get(lower);
-  if (state.pendingCache.has(lower)) return null;
-  state.pendingCache.add(lower);
+  const normalized = sanitizeChessUsername(rawUsername);
+  if (!normalized) return null;
+  if (state.chessCache.has(normalized)) return state.chessCache.get(normalized);
+  if (state.pendingCache.has(normalized)) return null;
+  state.pendingCache.add(normalized);
 
   try {
-    const [profileRes, statsRes] = await Promise.all([
-      fetch(`https://api.chess.com/pub/player/${encodeURIComponent(lower)}`),
-      fetch(`https://api.chess.com/pub/player/${encodeURIComponent(lower)}/stats`),
-    ]);
-    const profile = profileRes.ok ? await profileRes.json() : {};
-    const stats = statsRes.ok ? await statsRes.json() : {};
-    const canonicalUsername = sanitizeChessUsername(profile?.username || lower);
+    const rawTrimmed = String(rawUsername || '').trim();
+    const usernamesToTry = [...new Set([rawTrimmed, normalized])].filter(Boolean);
+    let profile = {};
+    let stats = {};
+    let successfulUsername = normalized;
+
+    for (const candidate of usernamesToTry) {
+      const encoded = encodeURIComponent(candidate);
+      const [profileRes, statsRes] = await Promise.all([
+        fetch(`https://api.chess.com/pub/player/${encoded}`),
+        fetch(`https://api.chess.com/pub/player/${encoded}/stats`),
+      ]);
+      if (!profileRes.ok && !statsRes.ok) continue;
+      profile = profileRes.ok ? await profileRes.json() : {};
+      stats = statsRes.ok ? await statsRes.json() : {};
+      successfulUsername = sanitizeChessUsername(profile?.username || candidate);
+      break;
+    }
+
+    const canonicalUsername = sanitizeChessUsername(profile?.username || successfulUsername || normalized);
     const rapid = stats?.chess_rapid?.last?.rating ?? null;
     const blitz = stats?.chess_blitz?.last?.rating ?? null;
     const bullet = stats?.chess_bullet?.last?.rating ?? null;
@@ -307,12 +329,12 @@ async function fetchChessProfile(rawUsername) {
       peak_global: Math.max(Number(peakRapid || 0), Number(peakBlitz || 0), Number(peakBullet || 0)) || null,
     };
 
-    state.chessCache.set(lower, data);
-    if (canonicalUsername !== lower) state.chessCache.set(canonicalUsername, data);
-    state.pendingCache.delete(lower);
+    state.chessCache.set(normalized, data);
+    if (canonicalUsername) state.chessCache.set(canonicalUsername, data);
+    state.pendingCache.delete(normalized);
     return data;
   } catch {
-    state.pendingCache.delete(lower);
+    state.pendingCache.delete(normalized);
     return null;
   }
 }
@@ -322,9 +344,22 @@ async function verifyChessComUsernameExists(username) {
   if (!normalized) return { ok: false, message: 'Le user_name Chess.com ne peut pas être vide.' };
 
   try {
-    const response = await fetch(`https://api.chess.com/pub/player/${encodeURIComponent(normalized)}`);
-    if (response.status === 404) {
-      return { ok: false, message: `Aucun profil Chess.com trouvé pour "${normalized}".` };
+    const rawTrimmed = String(username || '').trim();
+    const usernamesToTry = [...new Set([rawTrimmed, normalized])].filter(Boolean);
+    let response = null;
+    for (const candidate of usernamesToTry) {
+      const candidateRes = await fetch(`https://api.chess.com/pub/player/${encodeURIComponent(candidate)}`);
+      if (candidateRes.ok) {
+        response = candidateRes;
+        break;
+      }
+      if (candidateRes.status !== 404) {
+        response = candidateRes;
+        break;
+      }
+    }
+    if (!response || response.status === 404) {
+      return { ok: false, message: `Aucun profil Chess.com trouvé pour "${rawTrimmed || normalized}".` };
     }
     if (!response.ok) {
       return { ok: false, message: `Chess.com a répondu ${response.status}. Réessaie plus tard.` };
@@ -340,25 +375,26 @@ async function verifyChessComUsernameExists(username) {
 async function enrichVisiblePlayersData(players) {
   const missing = (players || []).filter((player) => !player.avatar_url || player.peak_global == null);
   if (!missing.length) return;
-  const batch = missing.slice(0, 10);
-  await Promise.allSettled(
-    batch.map(async (player) => {
-      const username = sanitizeChessUsername(player.chess_username);
-      if (!username) return;
-      const merged = await fetchChessProfile(username);
-      if (!merged) return;
-      if (!player.avatar_url) player.avatar_url = merged.avatar_url;
-      if (!player.country_code) player.country_code = merged.country_code;
-      if (!player.chess_title) player.chess_title = merged.chess_title;
-      if (!player.rapid_rating) player.rapid_rating = merged.rapid_rating;
-      if (!player.blitz_rating) player.blitz_rating = merged.blitz_rating;
-      if (!player.bullet_rating) player.bullet_rating = merged.bullet_rating;
-      player.peak_rapid = player.peak_rapid ?? merged.peak_rapid;
-      player.peak_blitz = player.peak_blitz ?? merged.peak_blitz;
-      player.peak_bullet = player.peak_bullet ?? merged.peak_bullet;
-      player.peak_global = player.peak_global ?? merged.peak_global;
-    }),
-  );
+  const batchSize = 8;
+  for (let index = 0; index < missing.length; index += batchSize) {
+    const batch = missing.slice(index, index + batchSize);
+    await Promise.allSettled(
+      batch.map(async (player) => {
+        const merged = await fetchChessProfile(player.chess_username);
+        if (!merged) return;
+        if (!player.avatar_url) player.avatar_url = merged.avatar_url;
+        if (!player.country_code) player.country_code = merged.country_code;
+        if (!player.chess_title) player.chess_title = merged.chess_title;
+        if (!player.rapid_rating) player.rapid_rating = merged.rapid_rating;
+        if (!player.blitz_rating) player.blitz_rating = merged.blitz_rating;
+        if (!player.bullet_rating) player.bullet_rating = merged.bullet_rating;
+        player.peak_rapid = player.peak_rapid ?? merged.peak_rapid;
+        player.peak_blitz = player.peak_blitz ?? merged.peak_blitz;
+        player.peak_bullet = player.peak_bullet ?? merged.peak_bullet;
+        player.peak_global = player.peak_global ?? merged.peak_global;
+      }),
+    );
+  }
   renderPlayersTable();
   renderTeamShowcase(state.teams, state.players);
   renderTeamDnD(state.teams, state.players);
@@ -386,7 +422,7 @@ function renderTeamShowcase(teams, players) {
           <p class="muted">Capitaine: ${captain?.display_name || 'Non défini'}</p>
         </div>
       </div>
-      <p><b>Force équipe</b>: ${Math.round(team.strength_score || 0)}</p>
+      <p><b>Force équipe</b>: ${Math.round(team.strength_score || 0)} ELO</p>
       <p><b>Moyenne rapid</b>: ${Math.round(avgRapid || 0)}</p>
       <p><b>Effectif</b>: ${roster.length} joueur(s)</p>
       <p class="muted">Top joueurs</p>
@@ -408,12 +444,13 @@ function renderTeamDnD(teams, players) {
   ];
   els.teamDnd.innerHTML = teamBlocks
     .map(
-      (block) => `<section class="drop-zone" data-team-drop="${block.id}">
+      (block) => `<section class="drop-zone ${block.id === 'substitutes' ? 'substitutes-zone' : ''}" data-team-drop="${block.id}">
         <h4>${block.label}</h4>
+        <p class="drop-zone-meta">${block.players.length} joueur(s) · ELO total ${Math.round(block.players.reduce((sum, p) => sum + Number(effectivePeakGlobal(p) || 0), 0))}</p>
         ${block.players
           .map(
             (player) => `<article class="dnd-player" draggable="true" data-player-id="${player.id}">
-              <div class="dnd-player-head">${avatarHTML(player, 'small')} <span>${player.display_name} ${player.is_captain ? '👑' : ''}</span></div>
+              <div class="dnd-player-head">${avatarHTML(player, 'small')} <span>${player.display_name} ${player.is_captain ? '👑' : ''}</span><span class="drag-grip" aria-hidden="true">⋮⋮</span></div>
               <small>${player.chess_username} · peak ${effectivePeakGlobal(player) || '-'}</small>
             </article>`,
           )
@@ -485,10 +522,7 @@ function renderPlayersTable() {
 }
 
 function playerStrengthValue(player) {
-  const rapid = Number(player.peak_rapid ?? player.rapid_rating ?? 0);
-  const blitz = Number(player.peak_blitz ?? player.blitz_rating ?? 0);
-  const bullet = Number(player.peak_bullet ?? player.bullet_rating ?? 0);
-  return rapid * 0.6 + blitz * 0.25 + bullet * 0.15;
+  return Number(effectivePeakGlobal(player) || 0);
 }
 
 function computeTeamStrengths(teams, players) {
@@ -505,9 +539,7 @@ function computeTeamStrengths(teams, players) {
   }
   return new Map(
     teams.map((team) => {
-      const count = counts.get(team.team_id) || 0;
-      const score = count > 0 ? totals.get(team.team_id) / count : 0;
-      return [team.team_id, score];
+      return [team.team_id, totals.get(team.team_id) || 0];
     }),
   );
 }
@@ -516,6 +548,16 @@ function imbalanceScore(strengthByTeam) {
   const values = [...strengthByTeam.values()];
   const avg = values.reduce((sum, value) => sum + value, 0) / Math.max(values.length, 1);
   return values.reduce((sum, value) => sum + Math.abs(value - avg), 0);
+}
+
+async function loadClubIdentity() {
+  const clubUsername = 'ivoirechess';
+  const profile = await fetchChessProfile(clubUsername);
+  if (profile?.avatar_url && els.clubLogo) {
+    els.clubLogo.src = profile.avatar_url;
+    els.clubLogo.hidden = false;
+    if (els.clubLogoFallback) els.clubLogoFallback.hidden = true;
+  }
 }
 
 function renderSwapRecommendations(teams, players) {
@@ -797,3 +839,4 @@ supabase.auth.onAuthStateChange((_event, session) => updateAdminUI(session));
 setInterval(loadPublic, 60000);
 await loadPublic();
 await loadAdminGames();
+await loadClubIdentity();
