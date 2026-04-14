@@ -25,6 +25,19 @@ const els = {
   windowMatch: document.getElementById('window-match'),
   syncGames: document.getElementById('sync-games'),
   adminGames: document.getElementById('admin-games'),
+  swapRecommendations: document.getElementById('swap-recommendations'),
+  playersTeamFilter: document.getElementById('players-team-filter'),
+  playersSort: document.getElementById('players-sort'),
+  teamDnd: document.getElementById('team-dnd'),
+  playersSearch: document.getElementById('players-search'),
+  themeToggle: document.getElementById('theme-toggle'),
+  mobileMenuBtn: document.getElementById('mobile-menu-btn'),
+  topNav: document.getElementById('top-nav'),
+  toast: document.getElementById('toast'),
+};
+const state = {
+  teams: [],
+  players: [],
 };
 
 for (const btn of document.querySelectorAll('.tab-btn')) {
@@ -40,7 +53,26 @@ const badge = (isCaptain) => (isCaptain ? '<span class="badge">👑 Capitaine</s
 const setAdminState = (message, isError = false) => {
   els.authState.textContent = message;
   els.authState.style.color = isError ? '#ff8a8a' : '';
+  showToast(message, isError);
 };
+
+function showToast(message, isError = false) {
+  if (!els.toast) return;
+  els.toast.textContent = message;
+  els.toast.style.borderColor = isError ? '#ff7d7d88' : '';
+  els.toast.classList.add('show');
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => els.toast.classList.remove('show'), 2600);
+}
+
+function applySavedTheme() {
+  const saved = localStorage.getItem('theme') || 'dark';
+  const theme = saved === 'light' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = theme;
+  if (els.themeToggle) {
+    els.themeToggle.textContent = theme === 'light' ? '☀️' : '🌙';
+  }
+}
 
 async function requireAuthenticatedAdminAction() {
   const { data, error } = await supabase.auth.getSession();
@@ -64,14 +96,18 @@ async function loadPublic() {
   ]);
 
   els.standings.classList.remove('skeleton');
-  els.standings.innerHTML = `<table><thead><tr><th>Poule</th><th>Rang</th><th>Équipe</th><th>Pts</th><th>Diff</th></tr></thead><tbody>${(standings || [])
-    .map((r) => `<tr><td>${r.pool}</td><td>${r.rank_in_pool}</td><td>${r.team_name}</td><td>${r.points}</td><td>${r.goal_diff}</td></tr>`)
-    .join('')}</tbody></table>`;
+  els.standings.innerHTML = !standings?.length
+    ? '<p class="muted">Aucun classement disponible pour le moment.</p>'
+    : `<table><thead><tr><th>Poule</th><th>Rang</th><th>Équipe</th><th>Pts</th><th>Diff</th></tr></thead><tbody>${(standings || [])
+        .map((r) => `<tr><td>${r.pool}</td><td>${r.rank_in_pool}</td><td>${r.team_name}</td><td>${r.points}</td><td>${r.goal_diff}</td></tr>`)
+        .join('')}</tbody></table>`;
 
   els.matches.classList.remove('skeleton');
-  els.matches.innerHTML = `<table><thead><tr><th>Date</th><th>Phase</th><th>Match</th><th>Score</th><th>Statut</th></tr></thead><tbody>${(matches || [])
-    .map((m) => `<tr><td>${m.scheduled_at ? new Date(m.scheduled_at).toLocaleString('fr-FR') : '-'}</td><td>${m.phase}</td><td>${m.team_a?.name || '?'} vs ${m.team_b?.name || '?'}</td><td>${m.score_a ?? '-'} - ${m.score_b ?? '-'}</td><td>${m.status}</td></tr>`)
-    .join('')}</tbody></table>`;
+  els.matches.innerHTML = !matches?.length
+    ? '<p class="muted">Aucun match planifié.</p>'
+    : `<table><thead><tr><th>Date</th><th>Phase</th><th>Match</th><th>Score</th><th>Statut</th></tr></thead><tbody>${(matches || [])
+        .map((m) => `<tr><td>${m.scheduled_at ? new Date(m.scheduled_at).toLocaleString('fr-FR') : '-'}</td><td>${m.phase}</td><td>${m.team_a?.name || '?'} vs ${m.team_b?.name || '?'}</td><td>${m.score_a ?? '-'} - ${m.score_b ?? '-'}</td><td>${m.status}</td></tr>`)
+        .join('')}</tbody></table>`;
 
   const semis = (matches || []).filter((m) => m.phase === 'semi');
   const final = (matches || []).find((m) => m.phase === 'final');
@@ -88,19 +124,184 @@ async function loadPublic() {
     )
     .join('');
 
-  els.players.classList.remove('skeleton');
-  els.players.innerHTML = `<table><thead><tr><th>Joueur</th><th>Équipe</th><th>Rapid</th><th>Blitz</th><th>Bullet</th><th>Peak rapid</th><th>Peak blitz</th><th>Peak bullet</th><th>Peak global</th></tr></thead><tbody>${(players || [])
-    .map(
-      (p) => `<tr><td>${p.display_name} ${badge(p.is_captain)}</td><td>${p.teams?.name || '-'}</td><td>${p.rapid_rating ?? '-'}</td><td>${p.blitz_rating ?? '-'}</td><td>${p.bullet_rating ?? '-'}</td><td>${p.peak_rapid ?? '-'}</td><td>${p.peak_blitz ?? '-'}</td><td>${p.peak_bullet ?? '-'}</td><td>${p.peak_global ?? '-'}</td></tr>`,
-    )
-    .join('')}</tbody></table>`;
+  state.teams = teams || [];
+  state.players = players || [];
+  renderPlayersTable();
 
-  const options = (teams || []).map((t) => `<option value="${t.team_id}">${t.team_name}</option>`).join('');
+  const teamFilterOptions = [`<option value="">Toutes les équipes</option>`, ...(teams || []).map((t) => `<option value="${t.team_id}">${t.team_name}</option>`)];
+  els.playersTeamFilter.innerHTML = teamFilterOptions.join('');
+  const options = [`<option value="">Substitut (sans équipe)</option>`, ...(teams || []).map((t) => `<option value="${t.team_id}">${t.team_name}</option>`)].join('');
   els.playerTeam.innerHTML = options;
   const matchOptions = (matches || []).map((m) => `<option value="${m.id}">${m.phase} - ${m.team_a?.name || '?'} vs ${m.team_b?.name || '?'}</option>`).join('');
   els.windowMatch.innerHTML = matchOptions;
   els.overrideMatch.innerHTML = matchOptions;
+  renderTeamDnD(teams || [], players || []);
   renderAdminRosters(teams || [], players || []);
+  renderSwapRecommendations(teams || [], players || []);
+}
+
+function renderTeamDnD(teams, players) {
+  if (!els.teamDnd) return;
+  const teamBlocks = [
+    ...teams.map((team) => ({
+      id: String(team.team_id),
+      label: team.team_name,
+      players: players.filter((player) => player.team_id === team.team_id),
+    })),
+    { id: 'substitutes', label: 'Substituts (sans équipe)', players: players.filter((player) => !player.team_id) },
+  ];
+  els.teamDnd.innerHTML = teamBlocks
+    .map(
+      (block) => `<section class="drop-zone" data-team-drop="${block.id}">
+        <h4>${block.label}</h4>
+        ${block.players
+          .map(
+            (player) => `<article class="dnd-player" draggable="true" data-player-id="${player.id}">
+              <div>${player.display_name} ${player.is_captain ? '👑' : ''}</div>
+              <small>${player.chess_username} · rapid ${player.rapid_rating ?? '-'}</small>
+            </article>`,
+          )
+          .join('')}
+      </section>`,
+    )
+    .join('');
+
+  for (const playerEl of els.teamDnd.querySelectorAll('[data-player-id]')) {
+    playerEl.addEventListener('dragstart', (event) => {
+      event.dataTransfer?.setData('text/player-id', playerEl.dataset.playerId);
+      event.dataTransfer.effectAllowed = 'move';
+    });
+  }
+  for (const zone of els.teamDnd.querySelectorAll('[data-team-drop]')) {
+    zone.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      zone.classList.add('drag-over');
+    });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+    zone.addEventListener('drop', async (event) => {
+      event.preventDefault();
+      zone.classList.remove('drag-over');
+      const playerId = Number(event.dataTransfer?.getData('text/player-id'));
+      const target = zone.dataset.teamDrop;
+      if (!playerId || !target) return;
+      const teamId = target === 'substitutes' ? null : Number(target);
+      const { error } = await supabase.from('players').update({ team_id: teamId }).eq('id', playerId);
+      if (error) {
+        setAdminState(`❌ Transfert impossible: ${error.message}`, true);
+        return;
+      }
+      showToast('✅ Joueur transféré');
+      await loadPublic();
+    });
+  }
+}
+
+function renderPlayersTable() {
+  const selectedTeam = Number(els.playersTeamFilter?.value || 0);
+  const sortKey = els.playersSort?.value || 'name_asc';
+  const search = (els.playersSearch?.value || '').trim().toLowerCase();
+  const filtered = [...state.players].filter((player) => {
+    if (selectedTeam && player.team_id !== selectedTeam) return false;
+    if (!search) return true;
+    return player.display_name.toLowerCase().includes(search) || player.chess_username.toLowerCase().includes(search);
+  });
+  filtered.sort((a, b) => {
+    if (sortKey === 'team_asc') {
+      return (a.teams?.name || '').localeCompare(b.teams?.name || '') || a.display_name.localeCompare(b.display_name);
+    }
+    if (sortKey === 'rapid_desc') return Number(b.rapid_rating || 0) - Number(a.rapid_rating || 0);
+    if (sortKey === 'rapid_asc') return Number(a.rapid_rating || 0) - Number(b.rapid_rating || 0);
+    if (sortKey === 'peak_global_desc') return Number(b.peak_global || 0) - Number(a.peak_global || 0);
+    if (sortKey === 'name_desc') return b.display_name.localeCompare(a.display_name);
+    return a.display_name.localeCompare(b.display_name);
+  });
+  els.players.classList.remove('skeleton');
+  if (!filtered.length) {
+    els.players.innerHTML = '<p class="muted">Aucun joueur ne correspond aux filtres sélectionnés.</p>';
+    return;
+  }
+  els.players.innerHTML = `<table><thead><tr><th>Joueur</th><th>Équipe</th><th>Rapid</th><th>Blitz</th><th>Bullet</th><th>Peak rapid</th><th>Peak blitz</th><th>Peak bullet</th><th>Peak global</th></tr></thead><tbody>${filtered
+    .map(
+      (p) => `<tr><td>${p.display_name} ${badge(p.is_captain)}</td><td>${p.teams?.name || '-'}</td><td>${p.rapid_rating ?? '-'}</td><td>${p.blitz_rating ?? '-'}</td><td>${p.bullet_rating ?? '-'}</td><td>${p.peak_rapid ?? '-'}</td><td>${p.peak_blitz ?? '-'}</td><td>${p.peak_bullet ?? '-'}</td><td>${p.peak_global ?? '-'}</td></tr>`,
+    )
+    .join('')}</tbody></table>`;
+}
+
+function playerStrengthValue(player) {
+  const rapid = Number(player.peak_rapid ?? player.rapid_rating ?? 0);
+  const blitz = Number(player.peak_blitz ?? player.blitz_rating ?? 0);
+  const bullet = Number(player.peak_bullet ?? player.bullet_rating ?? 0);
+  return rapid * 0.6 + blitz * 0.25 + bullet * 0.15;
+}
+
+function computeTeamStrengths(teams, players) {
+  const totals = new Map();
+  const counts = new Map();
+  for (const team of teams) {
+    totals.set(team.team_id, 0);
+    counts.set(team.team_id, 0);
+  }
+  for (const player of players) {
+    if (!player.team_id || !totals.has(player.team_id)) continue;
+    totals.set(player.team_id, totals.get(player.team_id) + playerStrengthValue(player));
+    counts.set(player.team_id, counts.get(player.team_id) + 1);
+  }
+  return new Map(
+    teams.map((team) => {
+      const count = counts.get(team.team_id) || 0;
+      const score = count > 0 ? totals.get(team.team_id) / count : 0;
+      return [team.team_id, score];
+    }),
+  );
+}
+
+function imbalanceScore(strengthByTeam) {
+  const values = [...strengthByTeam.values()];
+  const avg = values.reduce((sum, value) => sum + value, 0) / Math.max(values.length, 1);
+  return values.reduce((sum, value) => sum + Math.abs(value - avg), 0);
+}
+
+function renderSwapRecommendations(teams, players) {
+  if (!els.swapRecommendations) return;
+  const teamNameById = new Map(teams.map((team) => [team.team_id, team.team_name]));
+  const byTeam = computeTeamStrengths(teams, players);
+  const currentImbalance = imbalanceScore(byTeam);
+  const movable = players.filter((player) => player.team_id && !player.is_captain);
+  const recommendations = [];
+
+  for (let i = 0; i < movable.length; i += 1) {
+    for (let j = i + 1; j < movable.length; j += 1) {
+      const a = movable[i];
+      const b = movable[j];
+      if (a.team_id === b.team_id) continue;
+      const simulated = new Map(byTeam);
+      const teamAPlayers = players.filter((p) => p.team_id === a.team_id).length || 1;
+      const teamBPlayers = players.filter((p) => p.team_id === b.team_id).length || 1;
+      const aValue = playerStrengthValue(a);
+      const bValue = playerStrengthValue(b);
+      simulated.set(a.team_id, simulated.get(a.team_id) + (bValue - aValue) / teamAPlayers);
+      simulated.set(b.team_id, simulated.get(b.team_id) + (aValue - bValue) / teamBPlayers);
+      const newImbalance = imbalanceScore(simulated);
+      const improvement = currentImbalance - newImbalance;
+      if (improvement <= 0) continue;
+      recommendations.push({
+        fromA: `${a.display_name} (${teamNameById.get(a.team_id)})`,
+        fromB: `${b.display_name} (${teamNameById.get(b.team_id)})`,
+        gain: improvement,
+      });
+    }
+  }
+
+  recommendations.sort((a, b) => b.gain - a.gain);
+  const best = recommendations.slice(0, 8);
+
+  if (!best.length) {
+    els.swapRecommendations.innerHTML = '<p>Aucun swap recommandé: les équipes semblent déjà équilibrées.</p>';
+    return;
+  }
+  els.swapRecommendations.innerHTML = `<table><thead><tr><th>Swap recommandé</th><th>Impact équilibre</th></tr></thead><tbody>${best
+    .map((swap) => `<tr><td>${swap.fromA} ⇄ ${swap.fromB}</td><td>+${swap.gain.toFixed(2)}</td></tr>`)
+    .join('')}</tbody></table>`;
 }
 
 function renderAdminRosters(teams, players) {
@@ -165,14 +366,11 @@ els.teamForm.addEventListener('submit', async (e) => {
 els.playerForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!(await requireAuthenticatedAdminAction())) return;
-  if (!els.playerTeam.value) {
-    setAdminState("❌ Ajoute d'abord au moins une équipe.", true);
-    return;
-  }
+  const teamId = els.playerTeam.value ? Number(els.playerTeam.value) : null;
   const { error } = await supabase.from('players').insert({
     chess_username: document.getElementById('player-username').value,
     display_name: document.getElementById('player-name').value,
-    team_id: Number(els.playerTeam.value),
+    team_id: teamId,
     is_captain: document.getElementById('player-captain').checked,
   });
   if (error) {
@@ -200,8 +398,12 @@ els.generatePlayoffs.onclick = async () => {
 };
 
 els.syncElo.onclick = async () => {
+  if (!(await requireAuthenticatedAdminAction())) return;
   const { error } = await supabase.functions.invoke('sync-player-stats');
-  alert(error ? error.message : 'ELO synchronisé');
+  const message = error
+    ? `Erreur sync ELO: ${error.message}. Vérifie que la fonction est bien déployée et que les CORS sont actifs.`
+    : 'ELO Chess.com synchronisé';
+  alert(message);
   loadPublic();
 };
 
@@ -217,8 +419,18 @@ els.windowForm.addEventListener('submit', async (e) => {
 });
 
 els.syncGames.onclick = async () => {
-  const { error } = await supabase.functions.invoke('sync-chess-games', { body: { match_id: Number(els.windowMatch.value) } });
-  alert(error ? error.message : 'Parties importées');
+  if (!(await requireAuthenticatedAdminAction())) return;
+  if (!els.windowMatch.value) {
+    alert('Choisis un match avant de lancer la récupération des parties.');
+    return;
+  }
+  const { error } = await supabase.functions.invoke('sync-chess-games', {
+    body: { match_id: Number(els.windowMatch.value), max_games_per_board: 4 },
+  });
+  const message = error
+    ? `Erreur import parties: ${error.message}. Si tu vois "Failed to send a request to the Edge Function", c'est souvent un problème de CORS ou de fonction non déployée.`
+    : 'Parties rapides importées (max 4 par board)';
+  alert(message);
   loadAdminGames();
   loadPublic();
 };
@@ -241,7 +453,29 @@ els.overrideForm.addEventListener('submit', async (e) => {
 });
 
 els.refreshPublic.onclick = loadPublic;
+els.playersTeamFilter?.addEventListener('change', renderPlayersTable);
+els.playersSort?.addEventListener('change', renderPlayersTable);
+els.playersSearch?.addEventListener('input', renderPlayersTable);
+els.mobileMenuBtn?.addEventListener('click', () => {
+  const expanded = els.mobileMenuBtn.getAttribute('aria-expanded') === 'true';
+  els.mobileMenuBtn.setAttribute('aria-expanded', String(!expanded));
+  els.topNav?.classList.toggle('open');
+});
+els.themeToggle?.addEventListener('click', () => {
+  const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem('theme', next);
+  els.themeToggle.textContent = next === 'light' ? '☀️' : '🌙';
+});
 
+const observer = new IntersectionObserver((entries) => {
+  for (const entry of entries) {
+    if (entry.isIntersecting) entry.target.classList.add('show');
+  }
+}, { threshold: 0.08 });
+for (const block of document.querySelectorAll('.reveal')) observer.observe(block);
+
+applySavedTheme();
 setInterval(loadPublic, 60000);
 await loadPublic();
 await loadAdminGames();

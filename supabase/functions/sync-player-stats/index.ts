@@ -1,18 +1,30 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+};
+
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
 );
 
-Deno.serve(async () => {
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
   const { data: players, error } = await supabase
     .from('players')
     .select('id,chess_username');
-  if (error) return new Response(error.message, { status: 400 });
+  if (error) return new Response(error.message, { status: 400, headers: corsHeaders });
 
   for (const player of players ?? []) {
-    const res = await fetch(`https://api.chess.com/pub/player/${player.chess_username}/stats`);
+    const normalizedUsername = player.chess_username?.trim().toLowerCase();
+    if (!normalizedUsername) continue;
+    const res = await fetch(`https://api.chess.com/pub/player/${normalizedUsername}/stats`);
     if (!res.ok) continue;
     const stats = await res.json();
     const rapid = stats?.chess_rapid?.last?.rating ?? null;
@@ -37,5 +49,5 @@ Deno.serve(async () => {
       .eq('id', player.id);
   }
 
-  return Response.json({ ok: true });
+  return Response.json({ ok: true }, { headers: corsHeaders });
 });
