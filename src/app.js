@@ -258,6 +258,32 @@ function effectivePeakGlobal(player) {
   );
 }
 
+function sanitizeChessUsername(rawValue) {
+  return String(rawValue || '')
+    .trim()
+    .toLowerCase();
+}
+
+async function verifyChessComUsernameExists(username) {
+  const normalized = sanitizeChessUsername(username);
+  if (!normalized) return { ok: false, message: 'Le user_name Chess.com ne peut pas être vide.' };
+
+  try {
+    const response = await fetch(`https://api.chess.com/pub/player/${encodeURIComponent(normalized)}`);
+    if (response.status === 404) {
+      return { ok: false, message: `Aucun profil Chess.com trouvé pour "${normalized}".` };
+    }
+    if (!response.ok) {
+      return { ok: false, message: `Chess.com a répondu ${response.status}. Réessaie plus tard.` };
+    }
+    const profile = await response.json();
+    const canonical = sanitizeChessUsername(profile?.username || normalized);
+    return { ok: true, username: canonical };
+  } catch (error) {
+    return { ok: false, message: `Vérification Chess.com impossible: ${error.message}` };
+  }
+}
+
 async function enrichVisiblePlayersData(players) {
   const missing = (players || []).filter((player) => !player.avatar_url || player.peak_global == null);
   if (!missing.length) return;
@@ -508,9 +534,33 @@ function renderSwapRecommendations(teams, players) {
 function renderAdminRosters(teams, players) {
   els.rosterBox.innerHTML = `<table><thead><tr><th>Équipe</th><th>Joueur</th><th>Cap.</th><th>Action</th></tr></thead><tbody>${
     players
-      .map((p) => `<tr><td>${p.teams?.name || 'Sans équipe'}</td><td>${p.display_name} (${p.chess_username})</td><td>${p.is_captain ? 'Oui' : 'Non'}</td><td><button data-del-player="${p.id}">Supprimer joueur</button></td></tr>`)
+      .map(
+        (p) =>
+          `<tr><td>${p.teams?.name || 'Sans équipe'}</td><td>${p.display_name} (${p.chess_username})</td><td>${p.is_captain ? 'Oui' : 'Non'}</td><td><div class="row-actions"><button data-edit-player-username="${p.id}" data-current-username="${p.chess_username}">Modifier user_name</button> <button data-del-player="${p.id}">Supprimer joueur</button></div></td></tr>`,
+      )
       .join('')
   }${teams.map((t) => `<tr><td>${t.team_name}</td><td colspan="2">-</td><td><button data-del-team="${t.team_id}">Supprimer équipe</button></td></tr>`).join('')}</tbody></table>`;
+  for (const b of els.rosterBox.querySelectorAll('[data-edit-player-username]')) {
+    b.onclick = async () => {
+      if (!(await requireAuthenticatedAdminAction())) return;
+      const playerId = Number(b.dataset.editPlayerUsername);
+      const currentUsername = b.dataset.currentUsername || '';
+      const proposed = window.prompt('Nouveau user_name Chess.com pour ce joueur :', currentUsername);
+      if (proposed == null) return;
+
+      const validated = await verifyChessComUsernameExists(proposed);
+      if (!validated.ok) {
+        setAdminState(`❌ ${validated.message}`, true);
+        return;
+      }
+
+      const { error } = await supabase.from('players').update({ chess_username: validated.username }).eq('id', playerId);
+      if (error) return setAdminState(`❌ Mise à jour user_name impossible: ${error.message}`, true);
+
+      setAdminState(`✅ user_name Chess.com mis à jour (${validated.username})`);
+      await loadPublic();
+    };
+  }
   for (const b of els.rosterBox.querySelectorAll('[data-del-player]')) {
     b.onclick = async () => {
       if (!(await requireAuthenticatedAdminAction())) return;
@@ -589,8 +639,13 @@ els.playerForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!(await requireAuthenticatedAdminAction())) return;
   const teamId = els.playerTeam.value ? Number(els.playerTeam.value) : null;
+  const usernameCheck = await verifyChessComUsernameExists(document.getElementById('player-username').value);
+  if (!usernameCheck.ok) {
+    setAdminState(`❌ ${usernameCheck.message}`, true);
+    return;
+  }
   const { error } = await supabase.from('players').insert({
-    chess_username: document.getElementById('player-username').value,
+    chess_username: usernameCheck.username,
     display_name: document.getElementById('player-name').value,
     team_id: teamId,
     is_captain: document.getElementById('player-captain').checked,
