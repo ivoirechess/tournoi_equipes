@@ -38,14 +38,6 @@ const els = {
   toast: document.getElementById('toast'),
   clubLogo: document.getElementById('club-logo'),
   clubLogoFallback: document.getElementById('club-logo-fallback'),
-  miniBoardModal: document.getElementById('mini-board-modal'),
-  miniBoardTitle: document.getElementById('mini-board-title'),
-  miniBoardGrid: document.getElementById('mini-board-grid'),
-  miniBoardClose: document.getElementById('mini-board-close'),
-  miniBoardPrev: document.getElementById('mini-board-prev'),
-  miniBoardNext: document.getElementById('mini-board-next'),
-  miniBoardReset: document.getElementById('mini-board-reset'),
-  miniBoardStep: document.getElementById('mini-board-step'),
 };
 const state = {
   teams: [],
@@ -54,13 +46,6 @@ const state = {
   pendingCache: new Set(),
   adminSession: null,
   adminGamesCache: new Map(),
-  chessjs: null,
-  miniBoard: {
-    title: '',
-    pgn: '',
-    moves: [],
-    cursor: 0,
-  },
 };
 
 for (const btn of document.querySelectorAll('.tab-btn')) {
@@ -103,77 +88,6 @@ function applySavedTheme() {
   if (els.themeToggle) {
     els.themeToggle.textContent = theme === 'light' ? '☀️' : '🌙';
   }
-}
-
-async function loadChessJs() {
-  if (state.chessjs) return state.chessjs;
-  const mod = await import('https://cdn.jsdelivr.net/npm/chess.js@1.0.0/+esm');
-  state.chessjs = mod.Chess;
-  return state.chessjs;
-}
-
-function pieceToUnicode(piece) {
-  const map = {
-    p: '♟', r: '♜', n: '♞', b: '♝', q: '♛', k: '♚',
-    P: '♙', R: '♖', N: '♘', B: '♗', Q: '♕', K: '♔',
-  };
-  return map[piece] || '';
-}
-
-function renderMiniBoardFromFen(fen) {
-  if (!els.miniBoardGrid) return;
-  const [position] = String(fen || '').split(' ');
-  const rows = position.split('/');
-  const html = [];
-  for (let rank = 0; rank < 8; rank += 1) {
-    const row = rows[rank] || '';
-    let file = 0;
-    for (const token of row) {
-      const emptyCount = Number(token);
-      if (Number.isFinite(emptyCount) && emptyCount > 0) {
-        for (let i = 0; i < emptyCount; i += 1) {
-          const isDark = (rank + file) % 2 === 1;
-          html.push(`<div class="mini-cell ${isDark ? 'dark' : 'light'}"></div>`);
-          file += 1;
-        }
-      } else {
-        const isDark = (rank + file) % 2 === 1;
-        html.push(`<div class="mini-cell ${isDark ? 'dark' : 'light'}">${pieceToUnicode(token)}</div>`);
-        file += 1;
-      }
-    }
-  }
-  els.miniBoardGrid.innerHTML = html.join('');
-}
-
-async function renderMiniBoardPosition(moveIndex) {
-  const ChessCtor = await loadChessJs();
-  const chess = new ChessCtor();
-  chess.loadPgn(state.miniBoard.pgn || '');
-  const history = chess.history();
-  const boundedIndex = Math.max(0, Math.min(moveIndex, history.length));
-  const replay = new ChessCtor();
-  for (let i = 0; i < boundedIndex; i += 1) replay.move(history[i]);
-  state.miniBoard.cursor = boundedIndex;
-  state.miniBoard.moves = history;
-  renderMiniBoardFromFen(replay.fen());
-  if (els.miniBoardStep) els.miniBoardStep.textContent = `Coup ${boundedIndex} / ${history.length}`;
-}
-
-async function openMiniBoard(game) {
-  if (!game?.pgn) {
-    showToast('⚠️ PGN indisponible pour cette partie', true);
-    return;
-  }
-  state.miniBoard.title = `${game.white_username} vs ${game.black_username}`;
-  state.miniBoard.pgn = game.pgn;
-  if (els.miniBoardTitle) els.miniBoardTitle.textContent = state.miniBoard.title;
-  if (els.miniBoardModal) els.miniBoardModal.hidden = false;
-  await renderMiniBoardPosition(0);
-}
-
-function closeMiniBoard() {
-  if (els.miniBoardModal) els.miniBoardModal.hidden = true;
 }
 
 function getSessionRole(session) {
@@ -795,15 +709,9 @@ async function loadAdminGames() {
   state.adminGamesCache = new Map((data || []).map((g) => [g.id, g]));
   els.adminGames.innerHTML = `<table><thead><tr><th>Board</th><th>Partie</th><th>Résultat</th><th>Exclure</th></tr></thead><tbody>${(data || [])
     .map(
-      (g) => `<tr><td>M${g.match_id} / #${g.board_no}</td><td><a href="${g.game_url}" target="_blank" rel="noreferrer">${g.white_username} vs ${g.black_username}</a></td><td>${g.result}</td><td><div class="row-actions"><button data-view-game="${g.id}" ${g.pgn ? '' : 'disabled'}>Mini échiquier</button> <button data-exclude="${g.id}">${g.excluded ? 'Inclure' : 'Exclure'}</button></div></td></tr>`,
+      (g) => `<tr><td>M${g.match_id} / #${g.board_no}</td><td><a href="${g.game_url}" target="_blank" rel="noreferrer">${g.white_username} vs ${g.black_username}</a></td><td>${g.result}</td><td><div class="row-actions"><button data-exclude="${g.id}">${g.excluded ? 'Inclure' : 'Exclure'}</button></div></td></tr>`,
     )
     .join('')}</tbody></table>`;
-  for (const b of els.adminGames.querySelectorAll('[data-view-game]')) {
-    b.onclick = async () => {
-      const id = Number(b.dataset.viewGame);
-      await openMiniBoard(state.adminGamesCache.get(id));
-    };
-  }
   for (const b of els.adminGames.querySelectorAll('[data-exclude]')) {
     b.onclick = async () => {
       if (!(await requireAuthenticatedAdminAction())) return;
@@ -962,19 +870,6 @@ els.refreshPublic.onclick = loadPublic;
 els.playersTeamFilter?.addEventListener('change', renderPlayersTable);
 els.playersSort?.addEventListener('change', renderPlayersTable);
 els.playersSearch?.addEventListener('input', renderPlayersTable);
-els.miniBoardClose?.addEventListener('click', closeMiniBoard);
-els.miniBoardModal?.addEventListener('click', (event) => {
-  if (event.target === els.miniBoardModal) closeMiniBoard();
-});
-els.miniBoardPrev?.addEventListener('click', async () => {
-  await renderMiniBoardPosition(state.miniBoard.cursor - 1);
-});
-els.miniBoardNext?.addEventListener('click', async () => {
-  await renderMiniBoardPosition(state.miniBoard.cursor + 1);
-});
-els.miniBoardReset?.addEventListener('click', async () => {
-  await renderMiniBoardPosition(0);
-});
 els.mobileMenuBtn?.addEventListener('click', () => {
   const expanded = els.mobileMenuBtn.getAttribute('aria-expanded') === 'true';
   els.mobileMenuBtn.setAttribute('aria-expanded', String(!expanded));
