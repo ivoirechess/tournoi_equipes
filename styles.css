@@ -504,57 +504,6 @@ body.admin-logged #admin-logout { display: inline-flex; }
 .reveal.show { opacity: 1; transform: none; transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.4,0,0.2,1); }
 
 .row-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(4, 8, 18, 0.72);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1400;
-  padding: 1rem;
-}
-.modal-card {
-  width: min(460px, 100%);
-  border-radius: var(--r-md);
-  border: 1px solid var(--card-border);
-  background: var(--bg2);
-  box-shadow: var(--shadow-card);
-  padding: 1rem;
-}
-.modal-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.7rem;
-  margin-bottom: 0.9rem;
-}
-.mini-board-grid {
-  width: 100%;
-  aspect-ratio: 1;
-  border-radius: 10px;
-  overflow: hidden;
-  border: 1px solid var(--card-border);
-  display: grid;
-  grid-template-columns: repeat(8, 1fr);
-}
-.mini-cell {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: clamp(1.1rem, 3.2vw, 1.7rem);
-  user-select: none;
-}
-.mini-cell.light { background: #f0d9b5; }
-.mini-cell.dark { background: #b58863; }
-.mini-board-controls {
-  margin-top: 0.8rem;
-  display: flex;
-  gap: 0.45rem;
-  align-items: center;
-  flex-wrap: wrap;
-}
 footer { margin-top: 2rem; border-top: 1px solid var(--card-border); padding: 1.2rem 1.25rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; color: var(--text3); font-size: 0.82rem; }
 
 .status-pill { display: inline-flex; align-items: center; gap: 0.25rem; border-radius: 99px; padding: 0.15rem 0.6rem; font-size: 0.72rem; font-weight: 600; }
