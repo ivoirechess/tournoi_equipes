@@ -37,6 +37,23 @@ for (const btn of document.querySelectorAll('.tab-btn')) {
 }
 
 const badge = (isCaptain) => (isCaptain ? '<span class="badge">👑 Capitaine</span>' : '');
+const setAdminState = (message, isError = false) => {
+  els.authState.textContent = message;
+  els.authState.style.color = isError ? '#ff8a8a' : '';
+};
+
+async function requireAuthenticatedAdminAction() {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) {
+    setAdminState(`❌ Session invalide: ${error.message}`, true);
+    return false;
+  }
+  if (!data.session) {
+    setAdminState('❌ Connecte-toi en admin avant de modifier les équipes/joueurs.', true);
+    return false;
+  }
+  return true;
+}
 
 async function loadPublic() {
   const [{ data: standings }, { data: matches }, { data: teams }, { data: players }] = await Promise.all([
@@ -129,24 +146,40 @@ els.authForm.addEventListener('submit', async (e) => {
   const email = document.getElementById('admin-email').value;
   const password = document.getElementById('admin-password').value;
   const { error } = await supabase.auth.signInWithPassword({ email, password });
-  els.authState.textContent = error ? error.message : '✅ Connecté';
+  setAdminState(error ? `❌ ${error.message}` : '✅ Connecté');
 });
 
 els.teamForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  await supabase.from('teams').insert({ name: document.getElementById('team-name').value });
+  if (!(await requireAuthenticatedAdminAction())) return;
+  const { error } = await supabase.from('teams').insert({ name: document.getElementById('team-name').value.trim() });
+  if (error) {
+    setAdminState(`❌ Impossible d'ajouter l'équipe: ${error.message}`, true);
+    return;
+  }
+  setAdminState('✅ Équipe ajoutée');
   e.target.reset();
   loadPublic();
 });
 
 els.playerForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  await supabase.from('players').insert({
+  if (!(await requireAuthenticatedAdminAction())) return;
+  if (!els.playerTeam.value) {
+    setAdminState("❌ Ajoute d'abord au moins une équipe.", true);
+    return;
+  }
+  const { error } = await supabase.from('players').insert({
     chess_username: document.getElementById('player-username').value,
     display_name: document.getElementById('player-name').value,
     team_id: Number(els.playerTeam.value),
     is_captain: document.getElementById('player-captain').checked,
   });
+  if (error) {
+    setAdminState(`❌ Impossible d'ajouter le joueur: ${error.message}`, true);
+    return;
+  }
+  setAdminState('✅ Joueur ajouté');
   e.target.reset();
   loadPublic();
 });
