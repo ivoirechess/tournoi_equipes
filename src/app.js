@@ -12,6 +12,7 @@ const els = {
   players: document.getElementById('players'),
   authForm: document.getElementById('auth-form'),
   authState: document.getElementById('auth-state'),
+  adminLogout: document.getElementById('admin-logout'),
   teamForm: document.getElementById('team-form'),
   playerForm: document.getElementById('player-form'),
   rosterBox: document.getElementById('admin-rosters'),
@@ -39,6 +40,8 @@ const els = {
 const state = {
   teams: [],
   players: [],
+  chessCache: new Map(),
+  adminSession: null,
 };
 
 for (const btn of document.querySelectorAll('.tab-btn')) {
@@ -75,6 +78,37 @@ function applySavedTheme() {
   }
 }
 
+function getSessionRole(session) {
+  return session?.user?.app_metadata?.role || '';
+}
+
+function isAdminSession(session) {
+  return getSessionRole(session) === 'admin';
+}
+
+function updateAdminUI(session) {
+  state.adminSession = session || null;
+  const isAdmin = isAdminSession(session);
+  document.body.classList.toggle('admin-logged', Boolean(session));
+  document.body.classList.toggle('admin-verified', isAdmin);
+  if (els.authState) {
+    if (!session) {
+      els.authState.textContent = 'Non connecté';
+      els.authState.style.color = '';
+    } else if (isAdmin) {
+      els.authState.textContent = `✅ Connecté comme admin (${session.user.email})`;
+      els.authState.style.color = '';
+    } else {
+      els.authState.textContent = `⚠️ Connecté (${session.user.email}) mais sans rôle admin.`;
+      els.authState.style.color = '#ffcd6b';
+    }
+  }
+  if (els.authForm) {
+    const shouldCollapse = Boolean(session) && isAdmin;
+    els.authForm.classList.toggle('collapsed', shouldCollapse);
+  }
+}
+
 async function requireAuthenticatedAdminAction() {
   const { data, error } = await supabase.auth.getSession();
   if (error) {
@@ -85,20 +119,77 @@ async function requireAuthenticatedAdminAction() {
     setAdminState('❌ Connecte-toi en admin avant de modifier les équipes/joueurs.', true);
     return false;
   }
+  if (!isAdminSession(data.session)) {
+    setAdminState('⚠️ Compte connecté sans claim admin: accès en mode éditeur authentifié.');
+  }
   return true;
 }
 
+function computeFallbackStandings(teams, matches) {
+  const doneMatches = (matches || []).filter((m) => m.phase === 'group' && ['finished', 'validated'].includes(m.status));
+  const byPool = new Map();
+  for (const team of teams || []) {
+    const pool = team.pool || '—';
+    if (!byPool.has(pool)) byPool.set(pool, []);
+    byPool.get(pool).push({ pool, team_id: team.id, team_name: team.name, points: 0, goal_diff: 0 });
+  }
+  for (const match of doneMatches) {
+    const teamA = [...byPool.values()].flat().find((t) => t.team_id === match.team_a_id);
+    const teamB = [...byPool.values()].flat().find((t) => t.team_id === match.team_b_id);
+    if (!teamA || !teamB) continue;
+    const scoreA = Number(match.score_a ?? 0);
+    const scoreB = Number(match.score_b ?? 0);
+    if (scoreA > scoreB) teamA.points += 3;
+    else if (scoreB > scoreA) teamB.points += 3;
+    else {
+      teamA.points += 1;
+      teamB.points += 1;
+    }
+    teamA.goal_diff += Number(match.goal_diff_a ?? 0);
+    teamB.goal_diff += Number(match.goal_diff_b ?? 0);
+  }
+  return [...byPool.entries()]
+    .flatMap(([pool, rows]) =>
+      rows
+        .sort((a, b) => b.points - a.points || b.goal_diff - a.goal_diff || a.team_name.localeCompare(b.team_name))
+        .map((row, index) => ({ ...row, pool, rank_in_pool: index + 1 })),
+    );
+}
+
+function computeFallbackTeamStrength(teams, players) {
+  return (teams || []).map((team) => {
+    const roster = (players || []).filter((player) => player.team_id === team.id);
+    const avgPeakRapid = roster.reduce((sum, p) => sum + Number(p.peak_rapid ?? p.rapid_rating ?? 0), 0) / Math.max(roster.length, 1);
+    const avgPeakBlitz = roster.reduce((sum, p) => sum + Number(p.peak_blitz ?? p.blitz_rating ?? 0), 0) / Math.max(roster.length, 1);
+    const avgPeakBullet = roster.reduce((sum, p) => sum + Number(p.peak_bullet ?? p.bullet_rating ?? 0), 0) / Math.max(roster.length, 1);
+    return {
+      team_id: team.id,
+      team_name: team.name,
+      avg_peak_rapid: avgPeakRapid,
+      sum_peak_global: roster.reduce((sum, p) => sum + Number(p.peak_global ?? p.peak_rapid ?? p.rapid_rating ?? 0), 0),
+      strength_score: avgPeakRapid * 0.6 + avgPeakBlitz * 0.25 + avgPeakBullet * 0.15,
+    };
+  });
+}
+
 async function loadPublic() {
-  const [{ data: standings, error: standingsError }, { data: matches, error: matchesError }, { data: teams, error: teamsError }, { data: players, error: playersError }] = await Promise.all([
+  const [{ data: standingsData, error: standingsError }, { data: matches, error: matchesError }, { data: teamsData, error: teamsError }, { data: players, error: playersError }, { data: rawTeams, error: rawTeamsError }] = await Promise.all([
     supabase.from('standings').select('*').order('pool').order('rank_in_pool'),
     supabase.from('matches').select('*,team_a:teams!matches_team_a_id_fkey(name),team_b:teams!matches_team_b_id_fkey(name)').order('scheduled_at'),
     supabase.from('team_strength').select('*').order('strength_score', { ascending: false }),
     supabase.from('players').select('id,display_name,chess_username,is_captain,team_id,rapid_rating,blitz_rating,bullet_rating,peak_rapid,peak_blitz,peak_bullet,peak_global,avatar_url,chess_title,country_code,teams(name)').order('display_name'),
+    supabase.from('teams').select('id,name,pool').order('name'),
   ]);
-  const firstError = standingsError || matchesError || teamsError || playersError;
+  const firstError = matchesError || playersError || rawTeamsError;
   if (firstError) {
     setAdminState(`❌ Chargement impossible: ${firstError.message}`, true);
+    return;
   }
+  if (standingsError) showToast(`⚠️ Classement via vue indisponible (${standingsError.message}) → mode secours actif.`, true);
+  if (teamsError) showToast(`⚠️ Force équipe via vue indisponible (${teamsError.message}) → mode secours actif.`, true);
+
+  const standings = standingsError ? computeFallbackStandings(rawTeams || [], matches || []) : standingsData || [];
+  const teams = teamsError ? computeFallbackTeamStrength(rawTeams || [], players || []) : teamsData || [];
 
   els.standings.classList.remove('skeleton');
   els.standings.innerHTML = !standings?.length
@@ -122,7 +213,7 @@ async function loadPublic() {
   <p>🏆 Finale: ${final?.team_a?.name || '?'} vs ${final?.team_b?.name || '?'}</p>`;
 
   els.teams.classList.remove('skeleton');
-  const avgStrength = (teams || []).reduce((s, t) => s + Number(t.strength_score || 0), 0) / Math.max((teams || []).length, 1);
+  const avgStrength = teams.reduce((s, t) => s + Number(t.strength_score || 0), 0) / Math.max(teams.length, 1);
   els.teams.innerHTML = (teams || [])
     .map(
       (t) => `<div class="team-card"><h3>${t.team_name}</h3><p>Force équipe: <b>${Math.round(t.strength_score || 0)}</b></p><p>Moy. peak rapid: ${Math.round(t.avg_peak_rapid || 0)}</p><p>Total peak global: ${Math.round(t.sum_peak_global || 0)}</p><p>Écart vs moyenne: ${(Number(t.strength_score || 0) - avgStrength).toFixed(1)}</p></div>`,
@@ -132,10 +223,11 @@ async function loadPublic() {
   state.teams = teams || [];
   state.players = players || [];
   renderPlayersTable();
+  enrichVisiblePlayersData(state.players);
 
-  const teamFilterOptions = [`<option value="">Toutes les équipes</option>`, ...(teams || []).map((t) => `<option value="${t.team_id}">${t.team_name}</option>`)];
+  const teamFilterOptions = [`<option value="">Toutes les équipes</option>`, ...teams.map((t) => `<option value="${t.team_id}">${t.team_name}</option>`)];
   els.playersTeamFilter.innerHTML = teamFilterOptions.join('');
-  const options = [`<option value="">Substitut (sans équipe)</option>`, ...(teams || []).map((t) => `<option value="${t.team_id}">${t.team_name}</option>`)].join('');
+  const options = [`<option value="">Pool joueurs disponibles (sans équipe)</option>`, ...teams.map((t) => `<option value="${t.team_id}">${t.team_name}</option>`)].join('');
   els.playerTeam.innerHTML = options;
   const matchOptions = (matches || []).map((m) => `<option value="${m.id}">${m.phase} - ${m.team_a?.name || '?'} vs ${m.team_b?.name || '?'}</option>`).join('');
   els.windowMatch.innerHTML = matchOptions;
@@ -156,6 +248,64 @@ function avatarHTML(player, sizeClass = '') {
     return `<img class="avatar ${sizeClass}" src="${player.avatar_url}" alt="Photo de ${player.display_name}" loading="lazy" />`;
   }
   return `<span class="avatar fallback ${sizeClass}" aria-hidden="true">${initials(player?.display_name || '')}</span>`;
+}
+
+function effectivePeakGlobal(player) {
+  return player.peak_global ?? Math.max(
+    Number(player.peak_rapid ?? player.rapid_rating ?? 0),
+    Number(player.peak_blitz ?? player.blitz_rating ?? 0),
+    Number(player.peak_bullet ?? player.bullet_rating ?? 0),
+  );
+}
+
+async function enrichVisiblePlayersData(players) {
+  const missing = (players || []).filter((player) => !player.avatar_url || player.peak_global == null);
+  if (!missing.length) return;
+  const batch = missing.slice(0, 10);
+  await Promise.all(
+    batch.map(async (player) => {
+      const username = player.chess_username?.trim();
+      if (!username) return;
+      if (state.chessCache.has(username)) {
+        Object.assign(player, state.chessCache.get(username));
+        return;
+      }
+      try {
+        const [profileRes, statsRes] = await Promise.all([
+          fetch(`https://api.chess.com/pub/player/${encodeURIComponent(username)}`),
+          fetch(`https://api.chess.com/pub/player/${encodeURIComponent(username)}/stats`),
+        ]);
+        if (!profileRes.ok && !statsRes.ok) return;
+        const profile = profileRes.ok ? await profileRes.json() : {};
+        const stats = statsRes.ok ? await statsRes.json() : {};
+        const rapid = stats?.chess_rapid?.last?.rating ?? player.rapid_rating ?? null;
+        const blitz = stats?.chess_blitz?.last?.rating ?? player.blitz_rating ?? null;
+        const bullet = stats?.chess_bullet?.last?.rating ?? player.bullet_rating ?? null;
+        const peakRapid = stats?.chess_rapid?.best?.rating ?? player.peak_rapid ?? rapid;
+        const peakBlitz = stats?.chess_blitz?.best?.rating ?? player.peak_blitz ?? blitz;
+        const peakBullet = stats?.chess_bullet?.best?.rating ?? player.peak_bullet ?? bullet;
+        const merged = {
+          avatar_url: player.avatar_url || profile?.avatar || null,
+          country_code: player.country_code || profile?.country?.split('/').pop() || null,
+          chess_title: player.chess_title || profile?.title || null,
+          rapid_rating: rapid,
+          blitz_rating: blitz,
+          bullet_rating: bullet,
+          peak_rapid: peakRapid,
+          peak_blitz: peakBlitz,
+          peak_bullet: peakBullet,
+          peak_global: player.peak_global ?? Math.max(Number(peakRapid || 0), Number(peakBlitz || 0), Number(peakBullet || 0)),
+        };
+        state.chessCache.set(username, merged);
+        Object.assign(player, merged);
+      } catch {
+        // ignore network errors (Chess.com rate limits etc.)
+      }
+    }),
+  );
+  renderPlayersTable();
+  renderTeamShowcase(state.teams, state.players);
+  renderTeamDnD(state.teams, state.players);
 }
 
 function renderTeamShowcase(teams, players) {
@@ -207,8 +357,8 @@ function renderTeamDnD(teams, players) {
         ${block.players
           .map(
             (player) => `<article class="dnd-player" draggable="true" data-player-id="${player.id}">
-              <div>${player.display_name} ${player.is_captain ? '👑' : ''}</div>
-              <small>${player.chess_username} · rapid ${player.rapid_rating ?? '-'}</small>
+              <div class="dnd-player-head">${avatarHTML(player, 'small')} <span>${player.display_name} ${player.is_captain ? '👑' : ''}</span></div>
+              <small>${player.chess_username} · peak ${effectivePeakGlobal(player) || '-'}</small>
             </article>`,
           )
           .join('')}
@@ -273,7 +423,7 @@ function renderPlayersTable() {
   }
   els.players.innerHTML = `<table><thead><tr><th>Joueur</th><th>Équipe</th><th>Rapid</th><th>Blitz</th><th>Bullet</th><th>Peak rapid</th><th>Peak blitz</th><th>Peak bullet</th><th>Peak global</th></tr></thead><tbody>${filtered
     .map(
-      (p) => `<tr><td>${p.display_name} ${badge(p.is_captain)}</td><td>${p.teams?.name || '-'}</td><td>${p.rapid_rating ?? '-'}</td><td>${p.blitz_rating ?? '-'}</td><td>${p.bullet_rating ?? '-'}</td><td>${p.peak_rapid ?? '-'}</td><td>${p.peak_blitz ?? '-'}</td><td>${p.peak_bullet ?? '-'}</td><td>${p.peak_global ?? '-'}</td></tr>`,
+      (p) => `<tr><td><div class="player-cell">${avatarHTML(p, 'small')}${p.display_name} ${badge(p.is_captain)}</div></td><td>${p.teams?.name || '-'}</td><td>${p.rapid_rating ?? '-'}</td><td>${p.blitz_rating ?? '-'}</td><td>${p.bullet_rating ?? '-'}</td><td>${p.peak_rapid ?? '-'}</td><td>${p.peak_blitz ?? '-'}</td><td>${p.peak_bullet ?? '-'}</td><td>${effectivePeakGlobal(p) || '-'}</td></tr>`,
     )
     .join('')}</tbody></table>`;
 }
@@ -407,8 +557,19 @@ els.authForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const email = document.getElementById('admin-email').value;
   const password = document.getElementById('admin-password').value;
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  setAdminState(error ? `❌ ${error.message}` : '✅ Connecté');
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) return setAdminState(`❌ ${error.message}`, true);
+  updateAdminUI(data.session);
+  setAdminState(isAdminSession(data.session) ? '✅ Connecté' : '⚠️ Connecté, mais rôle admin manquant.');
+  if (isAdminSession(data.session)) {
+    e.target.classList.add('collapsed');
+  }
+});
+els.adminLogout?.addEventListener('click', async () => {
+  await supabase.auth.signOut();
+  updateAdminUI(null);
+  setAdminState('Déconnecté.');
+  els.authForm.classList.remove('collapsed');
 });
 
 els.teamForm.addEventListener('submit', async (e) => {
@@ -547,6 +708,9 @@ const observer = new IntersectionObserver((entries) => {
 for (const block of document.querySelectorAll('.reveal')) observer.observe(block);
 
 applySavedTheme();
+const { data: authData } = await supabase.auth.getSession();
+updateAdminUI(authData.session);
+supabase.auth.onAuthStateChange((_event, session) => updateAdminUI(session));
 setInterval(loadPublic, 60000);
 await loadPublic();
 await loadAdminGames();

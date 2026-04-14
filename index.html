@@ -121,12 +121,16 @@
         </div>
         <article class="card">
           <h2>Connexion admin</h2>
+          <div class="admin-session-row">
+            <p id="auth-state"></p>
+            <button type="button" id="admin-logout" class="ghost">Se déconnecter</button>
+          </div>
           <form id="auth-form" class="grid two">
             <label>Email<input type="email" id="admin-email" required /></label>
             <label>Mot de passe<input type="password" id="admin-password" required /></label>
             <button type="submit" class="full">Se connecter</button>
           </form>
-          <p id="auth-state"></p>
+          <p class="muted">Après connexion, le panneau se compacte automatiquement pour laisser plus de place aux outils.</p>
         </article>
 
         <article class="card">
@@ -146,7 +150,7 @@
               <button type="submit">Ajouter</button>
             </form>
           </div>
-          <p class="muted">Glisse-dépose un joueur d'une équipe vers une autre pour le transférer. La force des équipes se met à jour après le swap.</p>
+          <p class="muted">Glisse-dépose depuis le pool de joueurs disponibles vers n'importe quelle équipe (et inversement) pour réorganiser les effectifs rapidement.</p>
           <div id="team-dnd" class="team-dnd"></div>
           <div id="admin-rosters" class="table-wrap"></div>
         </article>
