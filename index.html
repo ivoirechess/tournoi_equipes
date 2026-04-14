@@ -8,27 +8,30 @@
     <meta property="og:title" content="Chess Team Masters" />
     <meta property="og:description" content="Tournoi d'échecs par équipes avec suivi live, ELO Chess.com et outils admin avancés." />
     <meta property="og:type" content="website" />
-    <meta name="theme-color" content="#0b1020" />
+    <meta name="theme-color" content="#080c18" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <header class="app-header" id="top">
       <a class="brand" href="#top" aria-label="Retour en haut">
-        <span class="brand-mark">♟️</span>
+        <div class="brand-icon">♟️</div>
         <span>
           <strong>Chess Team Masters</strong>
           <small>Tournoi premium par équipes</small>
         </span>
       </a>
+
       <button id="mobile-menu-btn" class="icon-btn mobile-only" aria-expanded="false" aria-controls="top-nav">☰</button>
+
       <nav id="top-nav" class="top-nav">
         <a href="#public-tab" class="nav-link">Public</a>
         <a href="#admin-tab" class="nav-link">Admin</a>
         <button id="theme-toggle" class="icon-btn" aria-label="Basculer thème">🌙</button>
       </nav>
+
       <nav class="segmented" aria-label="Vue">
         <button data-tab="public" class="tab-btn active">Public</button>
         <button data-tab="admin" class="tab-btn">Admin</button>
@@ -36,32 +39,33 @@
     </header>
 
     <main>
-      <section class="hero card reveal">
+      <section class="hero reveal">
         <div>
-          <p class="eyebrow">🔥 TOURNOI PAR ÉQUIPES</p>
-          <h1>Une expérience moderne pour suivre, gérer et équilibrer votre ligue.</h1>
-          <p class="muted">Classements en direct, profils enrichis, synchronisation Chess.com et outils admin avancés.</p>
+          <p class="eyebrow">🔥 Tournoi par équipes</p>
+          <h1>La plateforme moderne pour suivre et gérer votre ligue d'échecs.</h1>
+          <p class="hero-sub">Classements en direct, profils enrichis Chess.com, forces ELO et outils admin avancés — tout en un.</p>
           <div class="hero-actions">
-            <a class="btn" href="#public-tab">Voir le classement</a>
-            <a class="btn ghost" href="#admin-tab">Ouvrir la console admin</a>
+            <button class="btn primary" data-tab-link="public">Voir le classement</button>
+            <button class="btn ghost" data-tab-link="admin">Console admin</button>
           </div>
         </div>
         <div class="hero-kpis">
-          <article><b>6+</b><small>Équipes</small></article>
-          <article><b>4</b><small>Boards / match</small></article>
-          <article><b>Live</b><small>Sync Chess.com</small></article>
+          <div class="kpi-card"><b>6+</b><small>Équipes</small></div>
+          <div class="kpi-card"><b>4</b><small>Boards</small></div>
+          <div class="kpi-card"><b>Live</b><small>Chess.com</small></div>
         </div>
       </section>
 
       <section id="public-tab" class="tab-panel active reveal">
         <div class="section-head">
           <h2>Vue publique</h2>
-          <p class="muted">Résultats, force des équipes et suivi des joueurs.</p>
+          <p class="muted">Résultats, classements et profils joueurs.</p>
         </div>
+
         <div class="grid two">
           <article class="card">
             <h2>Classement des poules</h2>
-            <div id="standings" class="table-wrap skeleton"></div>
+            <div id="standings" class="skeleton"></div>
           </article>
           <article class="card">
             <h2>Phase finale</h2>
@@ -70,7 +74,7 @@
         </div>
 
         <article class="card">
-          <h2>Planning & résultats live</h2>
+          <h2>Planning & résultats</h2>
           <div id="matches" class="table-wrap skeleton"></div>
         </article>
 
@@ -80,14 +84,14 @@
         </article>
 
         <article class="card">
-          <h2>Mini page de visualisation des équipes</h2>
-          <p class="muted">Photo capitaine, effectif, force moyenne et joueurs clés.</p>
+          <h2>Vitrine des équipes</h2>
+          <p class="muted" style="margin-bottom:1rem">Capitaine, effectif, force et joueurs clés.</p>
           <div id="team-showcase" class="team-showcase skeleton"></div>
         </article>
 
         <article class="card">
           <h2>Profils joueurs</h2>
-          <div class="grid three">
+          <div class="grid three" style="margin-bottom:1rem">
             <label>
               Filtrer par équipe
               <select id="players-team-filter">
@@ -95,19 +99,19 @@
               </select>
             </label>
             <label>
-              Trier joueurs par
+              Trier par
               <select id="players-sort">
                 <option value="name_asc">Nom (A → Z)</option>
                 <option value="name_desc">Nom (Z → A)</option>
                 <option value="team_asc">Équipe (A → Z)</option>
-                <option value="rapid_desc">ELO rapid (haut → bas)</option>
-                <option value="rapid_asc">ELO rapid (bas → haut)</option>
-                <option value="peak_global_desc">Peak global (haut → bas)</option>
+                <option value="rapid_desc">ELO Rapid ↓</option>
+                <option value="rapid_asc">ELO Rapid ↑</option>
+                <option value="peak_global_desc">Peak global ↓</option>
               </select>
             </label>
             <label>
-              Recherche joueur
-              <input id="players-search" placeholder="Nom ou username..." />
+              Recherche
+              <input id="players-search" placeholder="Nom ou username…" />
             </label>
           </div>
           <div id="players" class="table-wrap skeleton"></div>
@@ -119,40 +123,46 @@
           <h2>Console admin</h2>
           <p class="muted">Gestion des équipes, joueurs, scores et imports Chess.com.</p>
         </div>
+
         <article class="card">
           <h2>Connexion admin</h2>
           <div class="admin-session-row">
-            <p id="auth-state"></p>
-            <button type="button" id="admin-logout" class="ghost">Se déconnecter</button>
+            <p id="auth-state">Non connecté</p>
+            <button type="button" id="admin-logout" class="btn ghost">Se déconnecter</button>
           </div>
           <form id="auth-form" class="grid two">
-            <label>Email<input type="email" id="admin-email" required /></label>
-            <label>Mot de passe<input type="password" id="admin-password" required /></label>
-            <button type="submit" class="full">Se connecter</button>
+            <label>Email<input type="email" id="admin-email" autocomplete="email" required /></label>
+            <label>Mot de passe<input type="password" id="admin-password" autocomplete="current-password" required /></label>
+            <button type="submit" class="btn primary full">Se connecter</button>
           </form>
-          <p class="muted">Après connexion, le panneau se compacte automatiquement pour laisser plus de place aux outils.</p>
         </article>
 
         <article class="card">
-          <h2>Gestion équipes / joueurs</h2>
-          <div class="grid two">
+          <h2>Gestion équipes & joueurs</h2>
+          <div class="grid two" style="margin-bottom:1.2rem">
             <form id="team-form">
-              <h3>Ajouter équipe</h3>
+              <h3>Ajouter une équipe</h3>
               <label>Nom<input id="team-name" required /></label>
-              <button type="submit">Ajouter</button>
+              <button type="submit" class="btn primary" style="margin-top:0.6rem;width:100%">+ Ajouter équipe</button>
             </form>
             <form id="player-form">
-              <h3>Ajouter joueur</h3>
-              <label>Username chess.com<input id="player-username" required /></label>
+              <h3>Ajouter un joueur</h3>
+              <label>Username Chess.com<input id="player-username" required placeholder="ex: Magnus_Carlsen" /></label>
               <label>Nom affiché<input id="player-name" required /></label>
-              <label>Équipe<select id="player-team"><option value="">Substitut (sans équipe)</option></select></label>
-              <label>Capitaine <input type="checkbox" id="player-captain" /></label>
-              <button type="submit">Ajouter</button>
+              <label>Équipe<select id="player-team"><option value="">Pool disponible (sans équipe)</option></select></label>
+              <label style="flex-direction:row;align-items:center;gap:0.5rem;margin-top:0.3rem">
+                <input type="checkbox" id="player-captain" style="width:auto" />
+                Désigner comme capitaine
+              </label>
+              <button type="submit" class="btn primary" style="margin-top:0.7rem;width:100%">+ Ajouter joueur</button>
             </form>
           </div>
-          <p class="muted">Glisse-dépose depuis le pool de joueurs disponibles vers n'importe quelle équipe (et inversement) pour réorganiser les effectifs rapidement.</p>
+
+          <p class="muted" style="margin-bottom:0.7rem">
+            Glisse-dépose les joueurs entre les zones pour réorganiser les équipes. La zone <em>Pool disponible</em> contient les joueurs non affectés.
+          </p>
           <div id="team-dnd" class="team-dnd"></div>
-          <div id="admin-rosters" class="table-wrap"></div>
+          <div id="admin-rosters" class="table-wrap" style="margin-top:1rem"></div>
         </article>
 
         <article class="card">
@@ -163,39 +173,37 @@
             <label>Score équipe B<input id="override-score-b" type="number" min="0" max="4" step="0.5" required /></label>
             <label>Diff. buts A<input id="override-goal-a" type="number" required /></label>
             <label>Diff. buts B<input id="override-goal-b" type="number" required /></label>
-            <button type="submit">Appliquer override</button>
+            <button type="submit" class="btn primary" style="align-self:flex-end">Appliquer</button>
           </form>
         </article>
 
         <article class="card">
           <h2>Actions tournoi</h2>
-          <div class="grid two">
+          <div class="grid four">
             <button id="draw-groups">🎲 Tirer les poules</button>
-            <button id="generate-playoffs">Créer demies/finale</button>
-            <button id="sync-elo">Mettre à jour ELO / pics</button>
-            <button id="refresh-public">Rafraîchir affichage</button>
+            <button id="generate-playoffs">🏆 Générer playoffs</button>
+            <button id="sync-elo">⚡ Sync ELO Chess.com</button>
+            <button id="refresh-public">🔄 Rafraîchir</button>
           </div>
         </article>
 
         <article class="card">
-          <h2>Équilibrage des équipes (admin)</h2>
-          <p class="muted">
-            Suggestions automatiques de swaps (hors capitaines) pour rapprocher les forces des équipes.
-          </p>
+          <h2>Équilibrage automatique</h2>
+          <p class="muted" style="margin-bottom:0.8rem">Suggestions de swaps (hors capitaines) pour équilibrer les forces.</p>
           <div id="swap-recommendations" class="table-wrap"></div>
         </article>
 
         <article class="card">
-          <h2>Matchboards & récupération Chess.com</h2>
-          <form id="window-form" class="grid three">
+          <h2>Import parties Chess.com</h2>
+          <form id="window-form" class="grid three" style="margin-bottom:1rem">
             <label>Match<select id="window-match"></select></label>
             <label>Board #<input type="number" id="window-board" min="1" max="4" required /></label>
             <label>Début<input type="datetime-local" id="window-start" required /></label>
             <label>Fin<input type="datetime-local" id="window-end" required /></label>
-            <button type="submit">Enregistrer intervalle</button>
+            <button type="submit" class="btn primary" style="align-self:flex-end">Enregistrer plage</button>
           </form>
-          <button id="sync-games">Importer 4 parties/board</button>
-          <div id="admin-games" class="table-wrap"></div>
+          <button id="sync-games" class="btn primary">⬇️ Importer les parties (max 4/board)</button>
+          <div id="admin-games" class="table-wrap" style="margin-top:1rem"></div>
         </article>
       </section>
     </main>
@@ -203,14 +211,17 @@
     <footer>
       <div>
         <b>Chess Team Masters</b>
-        <p>Plateforme moderne pour gérer un tournoi d'échecs par équipes.</p>
+        <p style="margin:0.1rem 0 0;font-size:0.78rem">Plateforme moderne de tournoi d'échecs par équipes.</p>
       </div>
-      <a href="#">Règles</a>
-      <a href="#">Crédits</a>
-      <a href="mailto:admin@tournoi.local">Contact admin</a>
+      <div style="display:flex;gap:1rem;align-items:center">
+        <a href="#">Règles</a>
+        <a href="#">Crédits</a>
+        <a href="mailto:admin@tournoi.local">Contact</a>
+      </div>
     </footer>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
     <script type="module" src="./src/app.js"></script>
   </body>
 </html>

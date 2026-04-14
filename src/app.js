@@ -41,6 +41,7 @@ const state = {
   teams: [],
   players: [],
   chessCache: new Map(),
+  pendingCache: new Set(),
   adminSession: null,
 };
 
@@ -50,6 +51,14 @@ for (const btn of document.querySelectorAll('.tab-btn')) {
     document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById(`${btn.dataset.tab}-tab`).classList.add('active');
+  });
+}
+
+for (const btn of document.querySelectorAll('[data-tab-link]')) {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tabLink;
+    document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+    document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('active', p.id === `${tab}-tab`));
   });
 }
 
@@ -259,9 +268,53 @@ function effectivePeakGlobal(player) {
 }
 
 function sanitizeChessUsername(rawValue) {
-  return String(rawValue || '')
-    .trim()
-    .toLowerCase();
+  return String(rawValue || '').trim().toLowerCase();
+}
+
+async function fetchChessProfile(rawUsername) {
+  const lower = sanitizeChessUsername(rawUsername);
+  if (!lower) return null;
+  if (state.chessCache.has(lower)) return state.chessCache.get(lower);
+  if (state.pendingCache.has(lower)) return null;
+  state.pendingCache.add(lower);
+
+  try {
+    const [profileRes, statsRes] = await Promise.all([
+      fetch(`https://api.chess.com/pub/player/${encodeURIComponent(lower)}`),
+      fetch(`https://api.chess.com/pub/player/${encodeURIComponent(lower)}/stats`),
+    ]);
+    const profile = profileRes.ok ? await profileRes.json() : {};
+    const stats = statsRes.ok ? await statsRes.json() : {};
+    const canonicalUsername = sanitizeChessUsername(profile?.username || lower);
+    const rapid = stats?.chess_rapid?.last?.rating ?? null;
+    const blitz = stats?.chess_blitz?.last?.rating ?? null;
+    const bullet = stats?.chess_bullet?.last?.rating ?? null;
+    const peakRapid = stats?.chess_rapid?.best?.rating ?? rapid;
+    const peakBlitz = stats?.chess_blitz?.best?.rating ?? blitz;
+    const peakBullet = stats?.chess_bullet?.best?.rating ?? bullet;
+
+    const data = {
+      canonical_username: canonicalUsername,
+      avatar_url: profile?.avatar ?? null,
+      country_code: typeof profile?.country === 'string' ? profile.country.split('/').pop() ?? null : null,
+      chess_title: profile?.title ?? null,
+      rapid_rating: rapid,
+      blitz_rating: blitz,
+      bullet_rating: bullet,
+      peak_rapid: peakRapid,
+      peak_blitz: peakBlitz,
+      peak_bullet: peakBullet,
+      peak_global: Math.max(Number(peakRapid || 0), Number(peakBlitz || 0), Number(peakBullet || 0)) || null,
+    };
+
+    state.chessCache.set(lower, data);
+    if (canonicalUsername !== lower) state.chessCache.set(canonicalUsername, data);
+    state.pendingCache.delete(lower);
+    return data;
+  } catch {
+    state.pendingCache.delete(lower);
+    return null;
+  }
 }
 
 async function verifyChessComUsernameExists(username) {
@@ -288,45 +341,22 @@ async function enrichVisiblePlayersData(players) {
   const missing = (players || []).filter((player) => !player.avatar_url || player.peak_global == null);
   if (!missing.length) return;
   const batch = missing.slice(0, 10);
-  await Promise.all(
+  await Promise.allSettled(
     batch.map(async (player) => {
-      const username = player.chess_username?.trim();
+      const username = sanitizeChessUsername(player.chess_username);
       if (!username) return;
-      if (state.chessCache.has(username)) {
-        Object.assign(player, state.chessCache.get(username));
-        return;
-      }
-      try {
-        const [profileRes, statsRes] = await Promise.all([
-          fetch(`https://api.chess.com/pub/player/${encodeURIComponent(username)}`),
-          fetch(`https://api.chess.com/pub/player/${encodeURIComponent(username)}/stats`),
-        ]);
-        if (!profileRes.ok && !statsRes.ok) return;
-        const profile = profileRes.ok ? await profileRes.json() : {};
-        const stats = statsRes.ok ? await statsRes.json() : {};
-        const rapid = stats?.chess_rapid?.last?.rating ?? player.rapid_rating ?? null;
-        const blitz = stats?.chess_blitz?.last?.rating ?? player.blitz_rating ?? null;
-        const bullet = stats?.chess_bullet?.last?.rating ?? player.bullet_rating ?? null;
-        const peakRapid = stats?.chess_rapid?.best?.rating ?? player.peak_rapid ?? rapid;
-        const peakBlitz = stats?.chess_blitz?.best?.rating ?? player.peak_blitz ?? blitz;
-        const peakBullet = stats?.chess_bullet?.best?.rating ?? player.peak_bullet ?? bullet;
-        const merged = {
-          avatar_url: player.avatar_url || profile?.avatar || null,
-          country_code: player.country_code || profile?.country?.split('/').pop() || null,
-          chess_title: player.chess_title || profile?.title || null,
-          rapid_rating: rapid,
-          blitz_rating: blitz,
-          bullet_rating: bullet,
-          peak_rapid: peakRapid,
-          peak_blitz: peakBlitz,
-          peak_bullet: peakBullet,
-          peak_global: player.peak_global ?? Math.max(Number(peakRapid || 0), Number(peakBlitz || 0), Number(peakBullet || 0)),
-        };
-        state.chessCache.set(username, merged);
-        Object.assign(player, merged);
-      } catch {
-        // ignore network errors (Chess.com rate limits etc.)
-      }
+      const merged = await fetchChessProfile(username);
+      if (!merged) return;
+      if (!player.avatar_url) player.avatar_url = merged.avatar_url;
+      if (!player.country_code) player.country_code = merged.country_code;
+      if (!player.chess_title) player.chess_title = merged.chess_title;
+      if (!player.rapid_rating) player.rapid_rating = merged.rapid_rating;
+      if (!player.blitz_rating) player.blitz_rating = merged.blitz_rating;
+      if (!player.bullet_rating) player.bullet_rating = merged.bullet_rating;
+      player.peak_rapid = player.peak_rapid ?? merged.peak_rapid;
+      player.peak_blitz = player.peak_blitz ?? merged.peak_blitz;
+      player.peak_bullet = player.peak_bullet ?? merged.peak_bullet;
+      player.peak_global = player.peak_global ?? merged.peak_global;
     }),
   );
   renderPlayersTable();
@@ -668,7 +698,7 @@ els.drawGroups.onclick = async () => {
   const results = await Promise.all(updates);
   const firstError = results.find((result) => result.error)?.error;
   if (firstError) return setAdminState(`❌ Tirage des poules échoué: ${firstError.message}`, true);
-  alert('Poule A/B re-tirées');
+  showToast('✅ Poules re-tirées');
   await loadPublic();
 };
 
@@ -676,18 +706,17 @@ els.generatePlayoffs.onclick = async () => {
   if (!(await requireAuthenticatedAdminAction())) return;
   const { data, error } = await supabase.rpc('generate_playoff_matches');
   if (error) return setAdminState(`❌ Génération phase finale impossible: ${error.message}`, true);
-  alert(data || 'Phases finales générées');
+  showToast(data || '✅ Phases finales générées');
   await loadPublic();
 };
 
 els.syncElo.onclick = async () => {
   if (!(await requireAuthenticatedAdminAction())) return;
+  showToast('⏳ Synchronisation ELO en cours...');
   const { error } = await supabase.functions.invoke('sync-player-stats');
-  const message = error
-    ? `Erreur sync ELO: ${error.message}. Vérifie que la fonction est bien déployée et que les CORS sont actifs.`
-    : 'ELO Chess.com synchronisé';
-  alert(message);
-  loadPublic();
+  if (error) return setAdminState(`❌ Erreur sync ELO: ${error.message}`, true);
+  showToast('✅ ELO Chess.com synchronisé');
+  await loadPublic();
 };
 
 els.windowForm.addEventListener('submit', async (e) => {
@@ -700,24 +729,23 @@ els.windowForm.addEventListener('submit', async (e) => {
     end_at: new Date(document.getElementById('window-end').value).toISOString(),
   });
   if (error) return setAdminState(`❌ Sauvegarde intervalle impossible: ${error.message}`, true);
-  alert('Intervalle sauvegardé');
+  showToast('✅ Intervalle sauvegardé');
 });
 
 els.syncGames.onclick = async () => {
   if (!(await requireAuthenticatedAdminAction())) return;
   if (!els.windowMatch.value) {
-    alert('Choisis un match avant de lancer la récupération des parties.');
+    showToast('⚠️ Choisis un match avant l’import', true);
     return;
   }
+  showToast('⏳ Import des parties en cours...');
   const { error } = await supabase.functions.invoke('sync-chess-games', {
     body: { match_id: Number(els.windowMatch.value), max_games_per_board: 4 },
   });
-  const message = error
-    ? `Erreur import parties: ${error.message}. Si tu vois "Failed to send a request to the Edge Function", c'est souvent un problème de CORS ou de fonction non déployée.`
-    : 'Parties rapides importées (max 4 par board)';
-  alert(message);
-  loadAdminGames();
-  loadPublic();
+  if (error) return setAdminState(`❌ Erreur import parties: ${error.message}`, true);
+  showToast('✅ Parties importées');
+  await loadAdminGames();
+  await loadPublic();
 };
 
 els.overrideForm.addEventListener('submit', async (e) => {
@@ -735,7 +763,7 @@ els.overrideForm.addEventListener('submit', async (e) => {
     })
     .eq('id', Number(els.overrideMatch.value));
   if (error) return setAdminState(`❌ Override impossible: ${error.message}`, true);
-  alert('Override appliqué');
+  showToast('✅ Override appliqué');
   await loadPublic();
 });
 
