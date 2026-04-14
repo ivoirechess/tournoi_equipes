@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🔥 Tournoi d'Échecs par Équipes</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <h1>♟️ Chess Team Masters</h1>
+        <p class="banner">🔥 TOURNOI PAR ÉQUIPES 🔥</p>
+      </div>
+      <nav>
+        <button data-tab="public" class="tab-btn active">Public</button>
+        <button data-tab="admin" class="tab-btn">Admin</button>
+      </nav>
+    </header>
+
+    <main>
+      <section id="public-tab" class="tab-panel active">
+        <div class="grid two">
+          <article class="card">
+            <h2>Classement des poules</h2>
+            <div id="standings" class="table-wrap skeleton"></div>
+          </article>
+          <article class="card">
+            <h2>Phase finale</h2>
+            <div id="bracket" class="skeleton"></div>
+          </article>
+        </div>
+
+        <article class="card">
+          <h2>Planning & résultats live</h2>
+          <div id="matches" class="table-wrap skeleton"></div>
+        </article>
+
+        <article class="card">
+          <h2>Équipes & force ELO</h2>
+          <div id="teams" class="team-grid skeleton"></div>
+        </article>
+
+        <article class="card">
+          <h2>Profils joueurs</h2>
+          <div id="players" class="table-wrap skeleton"></div>
+        </article>
+      </section>
+
+      <section id="admin-tab" class="tab-panel">
+        <article class="card">
+          <h2>Connexion admin</h2>
+          <form id="auth-form" class="grid two">
+            <label>Email<input type="email" id="admin-email" required /></label>
+            <label>Mot de passe<input type="password" id="admin-password" required /></label>
+            <button type="submit" class="full">Se connecter</button>
+          </form>
+          <p id="auth-state"></p>
+        </article>
+
+        <article class="card">
+          <h2>Gestion équipes / joueurs</h2>
+          <div class="grid two">
+            <form id="team-form">
+              <h3>Ajouter équipe</h3>
+              <label>Nom<input id="team-name" required /></label>
+              <button type="submit">Ajouter</button>
+            </form>
+            <form id="player-form">
+              <h3>Ajouter joueur</h3>
+              <label>Username chess.com<input id="player-username" required /></label>
+              <label>Nom affiché<input id="player-name" required /></label>
+              <label>Équipe<select id="player-team"></select></label>
+              <label>Capitaine <input type="checkbox" id="player-captain" /></label>
+              <button type="submit">Ajouter</button>
+            </form>
+          </div>
+          <div id="admin-rosters" class="table-wrap"></div>
+        </article>
+
+        <article class="card">
+          <h2>Override score de match</h2>
+          <form id="override-form" class="grid three">
+            <label>Match<select id="override-match"></select></label>
+            <label>Score équipe A<input id="override-score-a" type="number" min="0" max="4" step="0.5" required /></label>
+            <label>Score équipe B<input id="override-score-b" type="number" min="0" max="4" step="0.5" required /></label>
+            <label>Diff. buts A<input id="override-goal-a" type="number" required /></label>
+            <label>Diff. buts B<input id="override-goal-b" type="number" required /></label>
+            <button type="submit">Appliquer override</button>
+          </form>
+        </article>
+
+        <article class="card">
+          <h2>Actions tournoi</h2>
+          <div class="grid two">
+            <button id="draw-groups">🎲 Tirer les poules</button>
+            <button id="generate-playoffs">Créer demies/finale</button>
+            <button id="sync-elo">Mettre à jour ELO / pics</button>
+            <button id="refresh-public">Rafraîchir affichage</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <h2>Matchboards & récupération Chess.com</h2>
+          <form id="window-form" class="grid three">
+            <label>Match<select id="window-match"></select></label>
+            <label>Board #<input type="number" id="window-board" min="1" max="4" required /></label>
+            <label>Début<input type="datetime-local" id="window-start" required /></label>
+            <label>Fin<input type="datetime-local" id="window-end" required /></label>
+            <button type="submit">Enregistrer intervalle</button>
+          </form>
+          <button id="sync-games">Importer 4 parties/board</button>
+          <div id="admin-games" class="table-wrap"></div>
+        </article>
+      </section>
+    </main>
+
+    <footer>
+      <a href="#">Règles</a>
+      <a href="#">Crédits</a>
+      <a href="mailto:admin@tournoi.local">Contact admin</a>
+    </footer>
+
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>
