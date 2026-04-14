@@ -182,6 +182,51 @@ function computeFallbackTeamStrength(teams, players) {
   });
 }
 
+function splitPoolsForDisplay(standings) {
+  const grouped = new Map();
+  for (const row of standings || []) {
+    const pool = row.pool || '—';
+    if (!grouped.has(pool)) grouped.set(pool, []);
+    grouped.get(pool).push(row);
+  }
+  return grouped;
+}
+
+function attachDnDHandlers(container) {
+  if (!container) return;
+  for (const playerEl of container.querySelectorAll('[data-player-id]')) {
+    playerEl.addEventListener('dragstart', (event) => {
+      playerEl.classList.add('dragging');
+      event.dataTransfer?.setData('text/player-id', playerEl.dataset.playerId);
+      event.dataTransfer.effectAllowed = 'move';
+    });
+    playerEl.addEventListener('dragend', () => playerEl.classList.remove('dragging'));
+  }
+  for (const zone of container.querySelectorAll('[data-team-drop]')) {
+    zone.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      zone.classList.add('drag-over');
+    });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+    zone.addEventListener('drop', async (event) => {
+      event.preventDefault();
+      zone.classList.remove('drag-over');
+      const playerId = Number(event.dataTransfer?.getData('text/player-id'));
+      const target = zone.dataset.teamDrop;
+      if (!playerId || !target) return;
+      const teamId = target === 'substitutes' ? null : Number(target);
+      if (!(await requireAuthenticatedAdminAction())) return;
+      const { error } = await supabase.from('players').update({ team_id: teamId }).eq('id', playerId);
+      if (error) {
+        setAdminState(`❌ Transfert impossible: ${error.message}`, true);
+        return;
+      }
+      showToast('✅ Joueur transféré');
+      await loadPublic();
+    });
+  }
+}
+
 async function loadPublic() {
   const [{ data: standingsData, error: standingsError }, { data: matches, error: matchesError }, { data: teamsData, error: teamsError }, { data: players, error: playersError }, { data: rawTeams, error: rawTeamsError }] = await Promise.all([
     supabase.from('standings').select('*').order('pool').order('rank_in_pool'),
@@ -199,14 +244,32 @@ async function loadPublic() {
   if (teamsError) showToast(`⚠️ Force équipe via vue indisponible (${teamsError.message}) → mode secours actif.`, true);
 
   const standings = standingsError ? computeFallbackStandings(rawTeams || [], matches || []) : standingsData || [];
-  const teams = teamsError ? computeFallbackTeamStrength(rawTeams || [], players || []) : teamsData || [];
+  const teamsBase = teamsError ? computeFallbackTeamStrength(rawTeams || [], players || []) : teamsData || [];
+  const poolByTeamId = new Map((rawTeams || []).map((team) => [team.id, team.pool]));
+  const teams = teamsBase.map((team) => ({
+    ...team,
+    pool: team.pool || poolByTeamId.get(team.team_id) || '—',
+  }));
 
   els.standings.classList.remove('skeleton');
-  els.standings.innerHTML = !standings?.length
-    ? '<p class="muted">Aucun classement disponible pour le moment.</p>'
-    : `<table><thead><tr><th>Poule</th><th>Rang</th><th>Équipe</th><th>Pts</th><th>Diff</th></tr></thead><tbody>${(standings || [])
-        .map((r) => `<tr><td>${r.pool}</td><td>${r.rank_in_pool}</td><td>${r.team_name}</td><td>${r.points}</td><td>${r.goal_diff}</td></tr>`)
-        .join('')}</tbody></table>`;
+  if (!standings?.length) {
+    els.standings.innerHTML = '<p class="muted">Aucun classement disponible pour le moment.</p>';
+  } else {
+    const grouped = splitPoolsForDisplay(standings);
+    const preferredPools = ['A', 'B'];
+    const orderedPools = [...preferredPools.filter((pool) => grouped.has(pool)), ...[...grouped.keys()].filter((pool) => !preferredPools.includes(pool))];
+    els.standings.innerHTML = `<div class="standings-split">${orderedPools
+      .map((pool) => {
+        const rows = grouped.get(pool) || [];
+        return `<section class="standings-pool">
+          <h3>Poule ${pool}</h3>
+          <table><thead><tr><th>Rang</th><th>Équipe</th><th>Pts</th><th>Diff</th></tr></thead><tbody>${rows
+            .map((r) => `<tr><td>${r.rank_in_pool}</td><td>${r.team_name}</td><td>${r.points}</td><td>${r.goal_diff}</td></tr>`)
+            .join('')}</tbody></table>
+        </section>`;
+      })
+      .join('')}</div>`;
+  }
 
   els.matches.classList.remove('skeleton');
   els.matches.innerHTML = !matches?.length
@@ -221,22 +284,6 @@ async function loadPublic() {
   els.bracket.innerHTML = `<p>🏁 Demi 1: ${semis[0]?.team_a?.name || '?'} vs ${semis[0]?.team_b?.name || '?'}</p>
   <p>🏁 Demi 2: ${semis[1]?.team_a?.name || '?'} vs ${semis[1]?.team_b?.name || '?'}</p>
   <p>🏆 Finale: ${final?.team_a?.name || '?'} vs ${final?.team_b?.name || '?'}</p>`;
-
-  els.teams.classList.remove('skeleton');
-  const avgStrength = teams.reduce((s, t) => s + Number(t.strength_score || 0), 0) / Math.max(teams.length, 1);
-  const maxStrength = Math.max(...teams.map((t) => Number(t.strength_score || 0)), 1);
-  els.teams.innerHTML = (teams || [])
-    .map(
-      (t) => `<div class="team-card">
-        <h3>${t.team_name}</h3>
-        <div class="stat-row"><span>Force équipe</span><b>${Math.round(t.strength_score || 0)} ELO</b></div>
-        <div class="strength-bar"><div class="strength-bar-fill" style="width:${Math.min(100, (Number(t.strength_score || 0) / maxStrength) * 100)}%"></div></div>
-        <div class="stat-row"><span>Moyenne peak rapid</span><b>${Math.round(t.avg_peak_rapid || 0)}</b></div>
-        <div class="stat-row"><span>Total peak global</span><b>${Math.round(t.sum_peak_global || 0)}</b></div>
-        <div class="stat-row"><span>Écart vs moyenne</span><b>${(Number(t.strength_score || 0) - avgStrength).toFixed(1)}</b></div>
-      </div>`,
-    )
-    .join('');
 
   state.teams = teams || [];
   state.players = players || [];
@@ -407,29 +454,59 @@ function renderTeamShowcase(teams, players) {
     els.teamShowcase.innerHTML = '<p class="muted">Aucune équipe à afficher pour le moment.</p>';
     return;
   }
-  const cards = teams.map((team) => {
-    const roster = players.filter((p) => p.team_id === team.team_id);
+  const avgStrength = teams.reduce((sum, team) => sum + Number(team.strength_score || 0), 0) / Math.max(teams.length, 1);
+  const maxStrength = Math.max(...teams.map((team) => Number(team.strength_score || 0)), 1);
+
+  const teamCards = teams.map((team) => {
+    const roster = players
+      .filter((p) => p.team_id === team.team_id)
+      .sort((a, b) => Number(effectivePeakGlobal(b) || 0) - Number(effectivePeakGlobal(a) || 0));
     const captain = roster.find((p) => p.is_captain) || roster[0] || null;
-    const topPlayers = [...roster]
-      .sort((a, b) => Number(b.peak_global || b.peak_rapid || b.rapid_rating || 0) - Number(a.peak_global || a.peak_rapid || a.rapid_rating || 0))
-      .slice(0, 3);
     const avgRapid = roster.reduce((sum, p) => sum + Number(p.rapid_rating || 0), 0) / Math.max(roster.length, 1);
-    return `<article class="showcase-card">
+    return `<article class="showcase-card drop-zone" data-team-drop="${team.team_id}">
       <div class="showcase-head">
         ${captain ? avatarHTML(captain) : '<span class="avatar fallback" aria-hidden="true">♟️</span>'}
         <div>
           <h3>${team.team_name}</h3>
-          <p class="muted">Capitaine: ${captain?.display_name || 'Non défini'}</p>
+          <p class="muted">Poule ${team.pool || '—'} · Capitaine: ${captain?.display_name || 'Non défini'}</p>
         </div>
       </div>
-      <p><b>Force équipe</b>: ${Math.round(team.strength_score || 0)} ELO</p>
-      <p><b>Moyenne rapid</b>: ${Math.round(avgRapid || 0)}</p>
-      <p><b>Effectif</b>: ${roster.length} joueur(s)</p>
-      <p class="muted">Top joueurs</p>
-      <ul class="showcase-list">${topPlayers.map((player) => `<li>${player.display_name}${player.chess_title ? ` (${player.chess_title})` : ''} · peak ${player.peak_global ?? player.peak_rapid ?? '-'}</li>`).join('') || '<li>-</li>'}</ul>
+      <div class="showcase-stats">
+        <div class="stat-row"><span>Force équipe</span><b>${Math.round(team.strength_score || 0)} ELO</b></div>
+        <div class="strength-bar"><div class="strength-bar-fill" style="width:${Math.min(100, (Number(team.strength_score || 0) / maxStrength) * 100)}%"></div></div>
+        <div class="stat-row"><span>Moyenne rapid</span><b>${Math.round(avgRapid || 0)}</b></div>
+        <div class="stat-row"><span>Total peak global</span><b>${Math.round(team.sum_peak_global || 0)}</b></div>
+        <div class="stat-row"><span>Écart vs moyenne</span><b>${(Number(team.strength_score || 0) - avgStrength).toFixed(1)}</b></div>
+      </div>
+      <p class="muted showcase-all-players">Tous les joueurs (${roster.length})</p>
+      <div class="showcase-roster">${roster
+        .map(
+          (player) => `<article class="dnd-player" draggable="true" data-player-id="${player.id}">
+            <div class="dnd-player-head">${avatarHTML(player, 'small')} <span>${player.display_name}${player.is_captain ? ' 👑' : ''}</span><span class="drag-grip" aria-hidden="true">⋮⋮</span></div>
+            <small>${player.chess_username} · R ${player.rapid_rating ?? '-'} · B ${player.blitz_rating ?? '-'} · Bu ${player.bullet_rating ?? '-'} · peak ${effectivePeakGlobal(player) || '-'}</small>
+          </article>`,
+        )
+        .join('') || '<p class="muted">Aucun joueur dans cette équipe.</p>'}</div>
     </article>`;
   });
-  els.teamShowcase.innerHTML = cards.join('');
+  const substitutes = players.filter((player) => !player.team_id).sort((a, b) => Number(effectivePeakGlobal(b) || 0) - Number(effectivePeakGlobal(a) || 0));
+  const substituteCard = `<article class="showcase-card drop-zone substitutes-zone" data-team-drop="substitutes">
+    <div class="showcase-head">
+      <span class="avatar fallback" aria-hidden="true">🧩</span>
+      <div><h3>Joueurs disponibles</h3><p class="muted">Sans équipe assignée</p></div>
+    </div>
+    <p class="muted showcase-all-players">Pool de remplacement (${substitutes.length})</p>
+    <div class="showcase-roster">${substitutes
+      .map(
+        (player) => `<article class="dnd-player" draggable="true" data-player-id="${player.id}">
+          <div class="dnd-player-head">${avatarHTML(player, 'small')} <span>${player.display_name}</span><span class="drag-grip" aria-hidden="true">⋮⋮</span></div>
+          <small>${player.chess_username} · peak ${effectivePeakGlobal(player) || '-'}</small>
+        </article>`,
+      )
+      .join('') || '<p class="muted">Aucun joueur disponible.</p>'}</div>
+  </article>`;
+  els.teamShowcase.innerHTML = [...teamCards, substituteCard].join('');
+  attachDnDHandlers(els.teamShowcase);
 }
 
 function renderTeamDnD(teams, players) {
@@ -459,35 +536,7 @@ function renderTeamDnD(teams, players) {
     )
     .join('');
 
-  for (const playerEl of els.teamDnd.querySelectorAll('[data-player-id]')) {
-    playerEl.addEventListener('dragstart', (event) => {
-      event.dataTransfer?.setData('text/player-id', playerEl.dataset.playerId);
-      event.dataTransfer.effectAllowed = 'move';
-    });
-  }
-  for (const zone of els.teamDnd.querySelectorAll('[data-team-drop]')) {
-    zone.addEventListener('dragover', (event) => {
-      event.preventDefault();
-      zone.classList.add('drag-over');
-    });
-    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
-    zone.addEventListener('drop', async (event) => {
-      event.preventDefault();
-      zone.classList.remove('drag-over');
-      const playerId = Number(event.dataTransfer?.getData('text/player-id'));
-      const target = zone.dataset.teamDrop;
-      if (!playerId || !target) return;
-      const teamId = target === 'substitutes' ? null : Number(target);
-      if (!(await requireAuthenticatedAdminAction())) return;
-      const { error } = await supabase.from('players').update({ team_id: teamId }).eq('id', playerId);
-      if (error) {
-        setAdminState(`❌ Transfert impossible: ${error.message}`, true);
-        return;
-      }
-      showToast('✅ Joueur transféré');
-      await loadPublic();
-    });
-  }
+  attachDnDHandlers(els.teamDnd);
 }
 
 function renderPlayersTable() {
@@ -736,7 +785,8 @@ els.drawGroups.onclick = async () => {
   const { data: teams, error } = await supabase.from('teams').select('id');
   if (error) return setAdminState(`❌ Impossible de charger les équipes: ${error.message}`, true);
   const shuffled = [...teams].sort(() => Math.random() - 0.5);
-  const updates = shuffled.map((t, i) => supabase.from('teams').update({ pool: i < 3 ? 'A' : 'B' }).eq('id', t.id));
+  const poolALimit = Math.ceil(shuffled.length / 2);
+  const updates = shuffled.map((t, i) => supabase.from('teams').update({ pool: i < poolALimit ? 'A' : 'B' }).eq('id', t.id));
   const results = await Promise.all(updates);
   const firstError = results.find((result) => result.error)?.error;
   if (firstError) return setAdminState(`❌ Tirage des poules échoué: ${firstError.message}`, true);
