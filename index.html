@@ -219,6 +219,21 @@
     </footer>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <div id="mini-board-modal" class="modal-backdrop" hidden>
+      <div class="modal-card">
+        <div class="modal-head">
+          <h3 id="mini-board-title">Mini échiquier</h3>
+          <button id="mini-board-close" class="btn ghost" type="button">Fermer</button>
+        </div>
+        <div id="mini-board-grid" class="mini-board-grid" aria-label="Aperçu échiquier"></div>
+        <div class="mini-board-controls">
+          <button id="mini-board-reset" class="btn ghost" type="button">⏮ Début</button>
+          <button id="mini-board-prev" class="btn ghost" type="button">◀ Coup précédent</button>
+          <span id="mini-board-step" class="muted">Coup 0 / 0</span>
+          <button id="mini-board-next" class="btn ghost" type="button">Coup suivant ▶</button>
+        </div>
+      </div>
+    </div>
 
     <script type="module" src="./src/app.js"></script>
   </body>
