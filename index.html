@@ -3,26 +3,61 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>🔥 Tournoi d'Échecs par Équipes</title>
+    <title>Chess Team Masters — Tournoi d'Échecs par Équipes</title>
+    <meta name="description" content="Plateforme premium de suivi d'un tournoi d'échecs par équipes : classements, résultats, forces ELO et console admin." />
+    <meta property="og:title" content="Chess Team Masters" />
+    <meta property="og:description" content="Tournoi d'échecs par équipes avec suivi live, ELO Chess.com et outils admin avancés." />
+    <meta property="og:type" content="website" />
+    <meta name="theme-color" content="#0b1020" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <header class="app-header">
-      <div>
-        <h1>♟️ Chess Team Masters</h1>
-        <p class="banner">🔥 TOURNOI PAR ÉQUIPES 🔥</p>
-      </div>
-      <nav>
+    <header class="app-header" id="top">
+      <a class="brand" href="#top" aria-label="Retour en haut">
+        <span class="brand-mark">♟️</span>
+        <span>
+          <strong>Chess Team Masters</strong>
+          <small>Tournoi premium par équipes</small>
+        </span>
+      </a>
+      <button id="mobile-menu-btn" class="icon-btn mobile-only" aria-expanded="false" aria-controls="top-nav">☰</button>
+      <nav id="top-nav" class="top-nav">
+        <a href="#public-tab" class="nav-link">Public</a>
+        <a href="#admin-tab" class="nav-link">Admin</a>
+        <button id="theme-toggle" class="icon-btn" aria-label="Basculer thème">🌙</button>
+      </nav>
+      <nav class="segmented" aria-label="Vue">
         <button data-tab="public" class="tab-btn active">Public</button>
         <button data-tab="admin" class="tab-btn">Admin</button>
       </nav>
     </header>
 
     <main>
-      <section id="public-tab" class="tab-panel active">
+      <section class="hero card reveal">
+        <div>
+          <p class="eyebrow">🔥 TOURNOI PAR ÉQUIPES</p>
+          <h1>Une expérience moderne pour suivre, gérer et équilibrer votre ligue.</h1>
+          <p class="muted">Classements en direct, profils enrichis, synchronisation Chess.com et outils admin avancés.</p>
+          <div class="hero-actions">
+            <a class="btn" href="#public-tab">Voir le classement</a>
+            <a class="btn ghost" href="#admin-tab">Ouvrir la console admin</a>
+          </div>
+        </div>
+        <div class="hero-kpis">
+          <article><b>6+</b><small>Équipes</small></article>
+          <article><b>4</b><small>Boards / match</small></article>
+          <article><b>Live</b><small>Sync Chess.com</small></article>
+        </div>
+      </section>
+
+      <section id="public-tab" class="tab-panel active reveal">
+        <div class="section-head">
+          <h2>Vue publique</h2>
+          <p class="muted">Résultats, force des équipes et suivi des joueurs.</p>
+        </div>
         <div class="grid two">
           <article class="card">
             <h2>Classement des poules</h2>
@@ -46,11 +81,38 @@
 
         <article class="card">
           <h2>Profils joueurs</h2>
+          <div class="grid three">
+            <label>
+              Filtrer par équipe
+              <select id="players-team-filter">
+                <option value="">Toutes les équipes</option>
+              </select>
+            </label>
+            <label>
+              Trier joueurs par
+              <select id="players-sort">
+                <option value="name_asc">Nom (A → Z)</option>
+                <option value="name_desc">Nom (Z → A)</option>
+                <option value="team_asc">Équipe (A → Z)</option>
+                <option value="rapid_desc">ELO rapid (haut → bas)</option>
+                <option value="rapid_asc">ELO rapid (bas → haut)</option>
+                <option value="peak_global_desc">Peak global (haut → bas)</option>
+              </select>
+            </label>
+            <label>
+              Recherche joueur
+              <input id="players-search" placeholder="Nom ou username..." />
+            </label>
+          </div>
           <div id="players" class="table-wrap skeleton"></div>
         </article>
       </section>
 
-      <section id="admin-tab" class="tab-panel">
+      <section id="admin-tab" class="tab-panel reveal">
+        <div class="section-head">
+          <h2>Console admin</h2>
+          <p class="muted">Gestion des équipes, joueurs, scores et imports Chess.com.</p>
+        </div>
         <article class="card">
           <h2>Connexion admin</h2>
           <form id="auth-form" class="grid two">
@@ -73,11 +135,13 @@
               <h3>Ajouter joueur</h3>
               <label>Username chess.com<input id="player-username" required /></label>
               <label>Nom affiché<input id="player-name" required /></label>
-              <label>Équipe<select id="player-team"></select></label>
+              <label>Équipe<select id="player-team"><option value="">Substitut (sans équipe)</option></select></label>
               <label>Capitaine <input type="checkbox" id="player-captain" /></label>
               <button type="submit">Ajouter</button>
             </form>
           </div>
+          <p class="muted">Glisse-dépose un joueur d'une équipe vers une autre pour le transférer. La force des équipes se met à jour après le swap.</p>
+          <div id="team-dnd" class="team-dnd"></div>
           <div id="admin-rosters" class="table-wrap"></div>
         </article>
 
@@ -104,6 +168,14 @@
         </article>
 
         <article class="card">
+          <h2>Équilibrage des équipes (admin)</h2>
+          <p class="muted">
+            Suggestions automatiques de swaps (hors capitaines) pour rapprocher les forces des équipes.
+          </p>
+          <div id="swap-recommendations" class="table-wrap"></div>
+        </article>
+
+        <article class="card">
           <h2>Matchboards & récupération Chess.com</h2>
           <form id="window-form" class="grid three">
             <label>Match<select id="window-match"></select></label>
@@ -119,11 +191,16 @@
     </main>
 
     <footer>
+      <div>
+        <b>Chess Team Masters</b>
+        <p>Plateforme moderne pour gérer un tournoi d'échecs par équipes.</p>
+      </div>
       <a href="#">Règles</a>
       <a href="#">Crédits</a>
       <a href="mailto:admin@tournoi.local">Contact admin</a>
     </footer>
 
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script type="module" src="./src/app.js"></script>
   </body>
 </html>

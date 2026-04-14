@@ -1,5 +1,11 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+};
+
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
@@ -12,7 +18,23 @@ function toScore(result: string) {
 }
 
 Deno.serve(async (req) => {
-  const { match_id } = await req.json();
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
+  let payload: { match_id?: number; max_games_per_board?: number } = {};
+  try {
+    payload = await req.json();
+  } catch {
+    return Response.json({ ok: false, error: 'Corps JSON invalide' }, { status: 400, headers: corsHeaders });
+  }
+
+  const match_id = Number(payload.match_id);
+  const maxGamesPerBoard = Math.max(1, Math.min(10, Number(payload.max_games_per_board ?? 4)));
+  if (!Number.isFinite(match_id) || match_id <= 0) {
+    return Response.json({ ok: false, error: 'match_id manquant ou invalide' }, { status: 400, headers: corsHeaders });
+  }
+
   const { data: windows } = await supabase.from('board_windows').select('*').eq('match_id', match_id);
   const { data: boards } = await supabase
     .from('match_boards')
@@ -54,7 +76,7 @@ Deno.serve(async (req) => {
         return inPair && ts >= new Date(w.start_at) && ts <= new Date(w.end_at);
       })
       .sort((a: any, b: any) => a.end_time - b.end_time)
-      .slice(0, 4);
+      .slice(0, maxGamesPerBoard);
 
     let gpA = 0;
     let gpB = 0;
@@ -97,5 +119,5 @@ Deno.serve(async (req) => {
 
   await supabase.rpc('recompute_match_scores', { p_match_id: match_id });
 
-  return Response.json({ ok: true });
+  return Response.json({ ok: true }, { headers: corsHeaders });
 });
