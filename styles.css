@@ -455,29 +455,3 @@ footer { margin-top: var(--space-3); border-top: 1px solid var(--card-border); p
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
-
-/* Multi-tournament modular additions */
-#tournament-switcher,
-#admin-tournament-select,
-#registration-tournament-select,
-#registration-player-select,
-#registration-team-select,
-#fixture-round-select,
-#fixture-status,
-#chess-import-tournament,
-#chess-import-round,
-#chess-import-fixture {
-  width: 100%;
-}
-
-#tournament-meta {
-  margin-top: 0.4rem;
-}
-
-#admin-tournament-summary {
-  margin-top: 0.7rem;
-  padding: 0.75rem;
-  border: 1px solid var(--line-soft, #ffffff22);
-  border-radius: 12px;
-  background: linear-gradient(180deg, #ffffff07 0%, #00000020 100%);
-}
