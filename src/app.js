@@ -324,6 +324,25 @@ function effectivePeakGlobal(player) {
   );
 }
 
+function effectivePeakRapid(player) {
+  return Math.max(Number(player?.peak_rapid ?? 0), Number(player?.rapid_rating ?? 0));
+}
+
+function shouldRefreshPlayerStats(player) {
+  return (
+    !player?.avatar_url
+    || player?.rapid_rating == null
+    || player?.blitz_rating == null
+    || player?.bullet_rating == null
+    || player?.peak_rapid == null
+    || player?.peak_blitz == null
+    || player?.peak_bullet == null
+    || Number(player?.peak_rapid ?? 0) < Number(player?.rapid_rating ?? 0)
+    || Number(player?.peak_blitz ?? 0) < Number(player?.blitz_rating ?? 0)
+    || Number(player?.peak_bullet ?? 0) < Number(player?.bullet_rating ?? 0)
+  );
+}
+
 function sanitizeChessUsername(rawValue) {
   return String(rawValue || '').trim().toLowerCase();
 }
@@ -421,7 +440,7 @@ async function verifyChessComUsernameExists(username) {
 }
 
 async function enrichVisiblePlayersData(players) {
-  const missing = (players || []).filter((player) => !player.avatar_url || player.peak_global == null);
+  const missing = (players || []).filter((player) => player.chess_username && shouldRefreshPlayerStats(player));
   if (!missing.length) return;
   const batchSize = 8;
   for (let index = 0; index < missing.length; index += batchSize) {
@@ -430,16 +449,16 @@ async function enrichVisiblePlayersData(players) {
       batch.map(async (player) => {
         const merged = await fetchChessProfile(player.chess_username);
         if (!merged) return;
-        if (!player.avatar_url) player.avatar_url = merged.avatar_url;
-        if (!player.country_code) player.country_code = merged.country_code;
-        if (!player.chess_title) player.chess_title = merged.chess_title;
-        if (!player.rapid_rating) player.rapid_rating = merged.rapid_rating;
-        if (!player.blitz_rating) player.blitz_rating = merged.blitz_rating;
-        if (!player.bullet_rating) player.bullet_rating = merged.bullet_rating;
-        player.peak_rapid = player.peak_rapid ?? merged.peak_rapid;
-        player.peak_blitz = player.peak_blitz ?? merged.peak_blitz;
-        player.peak_bullet = player.peak_bullet ?? merged.peak_bullet;
-        player.peak_global = player.peak_global ?? merged.peak_global;
+        if (merged.avatar_url) player.avatar_url = merged.avatar_url;
+        if (merged.country_code) player.country_code = merged.country_code;
+        if (merged.chess_title) player.chess_title = merged.chess_title;
+        if (merged.rapid_rating != null) player.rapid_rating = merged.rapid_rating;
+        if (merged.blitz_rating != null) player.blitz_rating = merged.blitz_rating;
+        if (merged.bullet_rating != null) player.bullet_rating = merged.bullet_rating;
+        if (merged.peak_rapid != null) player.peak_rapid = merged.peak_rapid;
+        if (merged.peak_blitz != null) player.peak_blitz = merged.peak_blitz;
+        if (merged.peak_bullet != null) player.peak_bullet = merged.peak_bullet;
+        player.peak_global = effectivePeakGlobal(player);
       }),
     );
   }
@@ -461,7 +480,7 @@ function renderTeamShowcase(teams, players) {
   const teamCards = teams.map((team) => {
     const roster = players
       .filter((p) => p.team_id === team.team_id)
-      .sort((a, b) => Number(effectivePeakGlobal(b) || 0) - Number(effectivePeakGlobal(a) || 0));
+      .sort((a, b) => Number(effectivePeakRapid(b) || 0) - Number(effectivePeakRapid(a) || 0));
     const captain = roster.find((p) => p.is_captain) || roster[0] || null;
     const avgRapid = roster.reduce((sum, p) => sum + Number(p.rapid_rating || 0), 0) / Math.max(roster.length, 1);
     return `<article class="showcase-card drop-zone" data-team-drop="${team.team_id}">
@@ -490,7 +509,7 @@ function renderTeamShowcase(teams, players) {
         .join('') || '<p class="muted">Aucun joueur dans cette équipe.</p>'}</div>
     </article>`;
   });
-  const substitutes = players.filter((player) => !player.team_id).sort((a, b) => Number(effectivePeakGlobal(b) || 0) - Number(effectivePeakGlobal(a) || 0));
+  const substitutes = players.filter((player) => !player.team_id).sort((a, b) => Number(effectivePeakRapid(b) || 0) - Number(effectivePeakRapid(a) || 0));
   const substituteCard = `<article class="showcase-card drop-zone substitutes-zone" data-team-drop="substitutes">
     <div class="showcase-head">
       <span class="avatar fallback" aria-hidden="true">🧩</span>
@@ -516,9 +535,9 @@ function renderTeamDnD(teams, players) {
     ...teams.map((team) => ({
       id: String(team.team_id),
       label: team.team_name,
-      players: players.filter((player) => player.team_id === team.team_id),
+      players: players.filter((player) => player.team_id === team.team_id).sort((a, b) => Number(effectivePeakRapid(b) || 0) - Number(effectivePeakRapid(a) || 0)),
     })),
-    { id: 'substitutes', label: 'Substituts (sans équipe)', players: players.filter((player) => !player.team_id) },
+    { id: 'substitutes', label: 'Substituts (sans équipe)', players: players.filter((player) => !player.team_id).sort((a, b) => Number(effectivePeakRapid(b) || 0) - Number(effectivePeakRapid(a) || 0)) },
   ];
   els.teamDnd.innerHTML = teamBlocks
     .map(
@@ -555,7 +574,7 @@ function renderPlayersTable() {
     }
     if (sortKey === 'rapid_desc') return Number(b.rapid_rating || 0) - Number(a.rapid_rating || 0);
     if (sortKey === 'rapid_asc') return Number(a.rapid_rating || 0) - Number(b.rapid_rating || 0);
-    if (sortKey === 'peak_global_desc') return Number(b.peak_global || 0) - Number(a.peak_global || 0);
+    if (sortKey === 'peak_global_desc') return Number(effectivePeakGlobal(b) || 0) - Number(effectivePeakGlobal(a) || 0);
     if (sortKey === 'name_desc') return b.display_name.localeCompare(a.display_name);
     return a.display_name.localeCompare(b.display_name);
   });
@@ -655,7 +674,8 @@ function renderSwapRecommendations(teams, players) {
 
 function renderAdminRosters(teams, players) {
   els.rosterBox.innerHTML = `<table><thead><tr><th>Équipe</th><th>Joueur</th><th>Cap.</th><th>Action</th></tr></thead><tbody>${
-    players
+    [...players]
+      .sort((a, b) => Number(effectivePeakRapid(b) || 0) - Number(effectivePeakRapid(a) || 0) || a.display_name.localeCompare(b.display_name))
       .map(
         (p) =>
           `<tr><td>${p.teams?.name || 'Sans équipe'}</td><td>${p.display_name} (${p.chess_username})</td><td>${p.is_captain ? 'Oui' : 'Non'}</td><td><div class="row-actions"><button data-edit-player-username="${p.id}" data-current-username="${p.chess_username}">Modifier user_name</button> <button data-del-player="${p.id}">Supprimer joueur</button></div></td></tr>`,
