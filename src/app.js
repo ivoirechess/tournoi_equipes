@@ -677,13 +677,28 @@ function imbalanceScore(strengthByTeam) {
 }
 
 async function loadClubIdentity() {
-  const clubUsername = 'ivoirechess';
-  const profile = await fetchChessProfile(clubUsername);
-  if (profile?.avatar_url && els.clubLogo) {
-    els.clubLogo.src = profile.avatar_url;
+  if (!els.clubLogo) return;
+  if (els.clubLogo.complete && els.clubLogo.naturalWidth > 0) {
     els.clubLogo.hidden = false;
     if (els.clubLogoFallback) els.clubLogoFallback.hidden = true;
+    return;
   }
+  els.clubLogo.addEventListener(
+    'load',
+    () => {
+      els.clubLogo.hidden = false;
+      if (els.clubLogoFallback) els.clubLogoFallback.hidden = true;
+    },
+    { once: true },
+  );
+  els.clubLogo.addEventListener(
+    'error',
+    () => {
+      els.clubLogo.hidden = true;
+      if (els.clubLogoFallback) els.clubLogoFallback.hidden = false;
+    },
+    { once: true },
+  );
 }
 
 function renderSwapRecommendations(teams, players) {
