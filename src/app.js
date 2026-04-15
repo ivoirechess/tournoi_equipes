@@ -317,7 +317,8 @@ function avatarHTML(player, sizeClass = '') {
 }
 
 function effectivePeakGlobal(player) {
-  return player.peak_global ?? Math.max(
+  return Math.max(
+    Number(player?.peak_global ?? 0),
     Number(player.peak_rapid ?? player.rapid_rating ?? 0),
     Number(player.peak_blitz ?? player.blitz_rating ?? 0),
     Number(player.peak_bullet ?? player.bullet_rating ?? 0),
@@ -337,6 +338,11 @@ function shouldRefreshPlayerStats(player) {
     || player?.peak_rapid == null
     || player?.peak_blitz == null
     || player?.peak_bullet == null
+    || Number(player?.peak_global ?? 0) < Math.max(
+      Number(player?.rapid_rating ?? 0),
+      Number(player?.blitz_rating ?? 0),
+      Number(player?.bullet_rating ?? 0),
+    )
     || Number(player?.peak_rapid ?? 0) < Number(player?.rapid_rating ?? 0)
     || Number(player?.peak_blitz ?? 0) < Number(player?.blitz_rating ?? 0)
     || Number(player?.peak_bullet ?? 0) < Number(player?.bullet_rating ?? 0)

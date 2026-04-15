@@ -44,10 +44,17 @@ Deno.serve(async (req) => {
     const rapid = stats?.chess_rapid?.last?.rating ?? null;
     const blitz = stats?.chess_blitz?.last?.rating ?? null;
     const bullet = stats?.chess_bullet?.last?.rating ?? null;
-    const peakRapid = stats?.chess_rapid?.best?.rating ?? rapid;
-    const peakBlitz = stats?.chess_blitz?.best?.rating ?? blitz;
-    const peakBullet = stats?.chess_bullet?.best?.rating ?? bullet;
-    const peakGlobal = Math.max(peakRapid || 0, peakBlitz || 0, peakBullet || 0) || null;
+    const peakRapid = Math.max(Number(stats?.chess_rapid?.best?.rating ?? 0), Number(rapid ?? 0)) || null;
+    const peakBlitz = Math.max(Number(stats?.chess_blitz?.best?.rating ?? 0), Number(blitz ?? 0)) || null;
+    const peakBullet = Math.max(Number(stats?.chess_bullet?.best?.rating ?? 0), Number(bullet ?? 0)) || null;
+    const peakGlobal = Math.max(
+      Number(peakRapid ?? 0),
+      Number(peakBlitz ?? 0),
+      Number(peakBullet ?? 0),
+      Number(rapid ?? 0),
+      Number(blitz ?? 0),
+      Number(bullet ?? 0),
+    ) || null;
 
     await supabase
       .from('players')
