@@ -30,6 +30,7 @@ const els = {
   swapRecommendations: document.getElementById('swap-recommendations'),
   playersTeamFilter: document.getElementById('players-team-filter'),
   playersSort: document.getElementById('players-sort'),
+  tournamentCadence: document.getElementById('tournament-cadence'),
   teamDnd: document.getElementById('team-dnd'),
   playersSearch: document.getElementById('players-search'),
   themeToggle: document.getElementById('theme-toggle'),
@@ -46,6 +47,7 @@ const state = {
   pendingCache: new Set(),
   adminSession: null,
   adminGamesCache: new Map(),
+  tournamentCadence: 'rapid',
 };
 
 for (const btn of document.querySelectorAll('.tab-btn')) {
@@ -66,6 +68,43 @@ for (const btn of document.querySelectorAll('[data-tab-link]')) {
 }
 
 const badge = (isCaptain) => (isCaptain ? '<span class="badge">👑 Capitaine</span>' : '');
+const CADENCE_LABELS = { rapid: 'Rapid', blitz: 'Blitz', bullet: 'Bullet' };
+
+function selectedCadence() {
+  const value = els.tournamentCadence?.value || state.tournamentCadence || 'rapid';
+  if (!['rapid', 'blitz', 'bullet'].includes(value)) return 'rapid';
+  return value;
+}
+
+function ratingField(cadence) {
+  return `${cadence}_rating`;
+}
+
+function peakField(cadence) {
+  return `peak_${cadence}`;
+}
+
+function cadenceRating(player, cadence = selectedCadence()) {
+  return player?.[ratingField(cadence)] ?? null;
+}
+
+function cadencePeak(player, cadence = selectedCadence()) {
+  const peakValue = player?.[peakField(cadence)];
+  const currentValue = cadenceRating(player, cadence);
+  return Math.max(Number(peakValue ?? 0), Number(currentValue ?? 0)) || null;
+}
+
+function updatePlayersSortLabels() {
+  const label = CADENCE_LABELS[selectedCadence()];
+  if (!els.playersSort) return;
+  const desc = els.playersSort.querySelector('option[value="rapid_desc"]');
+  const asc = els.playersSort.querySelector('option[value="rapid_asc"]');
+  const peak = els.playersSort.querySelector('option[value="peak_global_desc"]');
+  if (desc) desc.textContent = `ELO ${label} ↓`;
+  if (asc) asc.textContent = `ELO ${label} ↑`;
+  if (peak) peak.textContent = `Peak ${label.toLowerCase()} ↓`;
+}
+
 const setAdminState = (message, isError = false) => {
   els.authState.textContent = message;
   els.authState.style.color = isError ? '#ff8a8a' : '';
@@ -480,15 +519,23 @@ function renderTeamShowcase(teams, players) {
     els.teamShowcase.innerHTML = '<p class="muted">Aucune équipe à afficher pour le moment.</p>';
     return;
   }
-  const avgStrength = teams.reduce((sum, team) => sum + Number(team.strength_score || 0), 0) / Math.max(teams.length, 1);
-  const maxStrength = Math.max(...teams.map((team) => Number(team.strength_score || 0)), 1);
-
+  const cadence = selectedCadence();
+  const cadenceLabel = CADENCE_LABELS[cadence];
+  const rosterByTeam = new Map(teams.map((team) => [team.team_id, players.filter((p) => p.team_id === team.team_id)]));
+  const strengthByTeam = new Map(
+    teams.map((team) => {
+      const roster = rosterByTeam.get(team.team_id) || [];
+      const strength = roster.reduce((sum, player) => sum + Number(cadencePeak(player, cadence) || 0), 0);
+      return [team.team_id, strength];
+    }),
+  );
+  const avgStrength = [...strengthByTeam.values()].reduce((sum, value) => sum + value, 0) / Math.max(strengthByTeam.size, 1);
+  const maxStrength = Math.max(...strengthByTeam.values(), 1);
   const teamCards = teams.map((team) => {
-    const roster = players
-      .filter((p) => p.team_id === team.team_id)
-      .sort((a, b) => Number(effectivePeakRapid(b) || 0) - Number(effectivePeakRapid(a) || 0));
+    const roster = [...(rosterByTeam.get(team.team_id) || [])].sort((a, b) => Number(cadencePeak(b, cadence) || 0) - Number(cadencePeak(a, cadence) || 0));
+    const teamStrength = strengthByTeam.get(team.team_id) || 0;
     const captain = roster.find((p) => p.is_captain) || roster[0] || null;
-    const avgRapid = roster.reduce((sum, p) => sum + Number(p.rapid_rating || 0), 0) / Math.max(roster.length, 1);
+    const avgCadence = roster.reduce((sum, p) => sum + Number(cadenceRating(p, cadence) || 0), 0) / Math.max(roster.length, 1);
     return `<article class="showcase-card drop-zone" data-team-drop="${team.team_id}">
       <div class="showcase-head">
         ${captain ? avatarHTML(captain) : '<span class="avatar fallback" aria-hidden="true">♟️</span>'}
@@ -498,24 +545,24 @@ function renderTeamShowcase(teams, players) {
         </div>
       </div>
       <div class="showcase-stats">
-        <div class="stat-row"><span>Force équipe</span><b>${Math.round(team.strength_score || 0)} ELO</b></div>
-        <div class="strength-bar"><div class="strength-bar-fill" style="width:${Math.min(100, (Number(team.strength_score || 0) / maxStrength) * 100)}%"></div></div>
-        <div class="stat-row"><span>Moyenne rapid</span><b>${Math.round(avgRapid || 0)}</b></div>
-        <div class="stat-row"><span>Total peak global</span><b>${Math.round(team.sum_peak_global || 0)}</b></div>
-        <div class="stat-row"><span>Écart vs moyenne</span><b>${(Number(team.strength_score || 0) - avgStrength).toFixed(1)}</b></div>
+        <div class="stat-row"><span>Force équipe (${cadenceLabel})</span><b>${Math.round(teamStrength)} ELO</b></div>
+        <div class="strength-bar"><div class="strength-bar-fill" style="width:${Math.min(100, (teamStrength / maxStrength) * 100)}%"></div></div>
+        <div class="stat-row"><span>Moyenne ${cadenceLabel.toLowerCase()}</span><b>${Math.round(avgCadence || 0)}</b></div>
+        <div class="stat-row"><span>Total peak ${cadenceLabel.toLowerCase()}</span><b>${Math.round(roster.reduce((sum, p) => sum + Number(cadencePeak(p, cadence) || 0), 0))}</b></div>
+        <div class="stat-row"><span>Écart vs moyenne</span><b>${(teamStrength - avgStrength).toFixed(1)}</b></div>
       </div>
       <p class="muted showcase-all-players">Tous les joueurs (${roster.length})</p>
       <div class="showcase-roster">${roster
         .map(
           (player) => `<article class="dnd-player" draggable="true" data-player-id="${player.id}">
             <div class="dnd-player-head">${avatarHTML(player, 'small')} <span>${player.display_name}${player.is_captain ? ' 👑' : ''}</span><span class="drag-grip" aria-hidden="true">⋮⋮</span></div>
-            <small>${player.chess_username} · R ${player.rapid_rating ?? '-'} · B ${player.blitz_rating ?? '-'} · Bu ${player.bullet_rating ?? '-'} · peak ${effectivePeakGlobal(player) || '-'}</small>
+            <small>${player.chess_username} · ${cadenceLabel} ${cadenceRating(player, cadence) ?? '-'} · Peak ${cadenceLabel} ${cadencePeak(player, cadence) ?? '-'}</small>
           </article>`,
         )
         .join('') || '<p class="muted">Aucun joueur dans cette équipe.</p>'}</div>
     </article>`;
   });
-  const substitutes = players.filter((player) => !player.team_id).sort((a, b) => Number(effectivePeakRapid(b) || 0) - Number(effectivePeakRapid(a) || 0));
+  const substitutes = players.filter((player) => !player.team_id).sort((a, b) => Number(cadencePeak(b, cadence) || 0) - Number(cadencePeak(a, cadence) || 0));
   const substituteCard = `<article class="showcase-card drop-zone substitutes-zone" data-team-drop="substitutes">
     <div class="showcase-head">
       <span class="avatar fallback" aria-hidden="true">🧩</span>
@@ -526,7 +573,7 @@ function renderTeamShowcase(teams, players) {
       .map(
         (player) => `<article class="dnd-player" draggable="true" data-player-id="${player.id}">
           <div class="dnd-player-head">${avatarHTML(player, 'small')} <span>${player.display_name}</span><span class="drag-grip" aria-hidden="true">⋮⋮</span></div>
-          <small>${player.chess_username} · peak ${effectivePeakGlobal(player) || '-'}</small>
+          <small>${player.chess_username} · ${cadenceLabel} ${cadenceRating(player, cadence) ?? '-'} · Peak ${cadenceLabel} ${cadencePeak(player, cadence) ?? '-'}</small>
         </article>`,
       )
       .join('') || '<p class="muted">Aucun joueur disponible.</p>'}</div>
@@ -537,24 +584,26 @@ function renderTeamShowcase(teams, players) {
 
 function renderTeamDnD(teams, players) {
   if (!els.teamDnd) return;
+  const cadence = selectedCadence();
+  const cadenceLabel = CADENCE_LABELS[cadence];
   const teamBlocks = [
     ...teams.map((team) => ({
       id: String(team.team_id),
       label: team.team_name,
-      players: players.filter((player) => player.team_id === team.team_id).sort((a, b) => Number(effectivePeakRapid(b) || 0) - Number(effectivePeakRapid(a) || 0)),
+      players: players.filter((player) => player.team_id === team.team_id).sort((a, b) => Number(cadencePeak(b, cadence) || 0) - Number(cadencePeak(a, cadence) || 0)),
     })),
-    { id: 'substitutes', label: 'Substituts (sans équipe)', players: players.filter((player) => !player.team_id).sort((a, b) => Number(effectivePeakRapid(b) || 0) - Number(effectivePeakRapid(a) || 0)) },
+    { id: 'substitutes', label: 'Substituts (sans équipe)', players: players.filter((player) => !player.team_id).sort((a, b) => Number(cadencePeak(b, cadence) || 0) - Number(cadencePeak(a, cadence) || 0)) },
   ];
   els.teamDnd.innerHTML = teamBlocks
     .map(
       (block) => `<section class="drop-zone ${block.id === 'substitutes' ? 'substitutes-zone' : ''}" data-team-drop="${block.id}">
         <h4>${block.label}</h4>
-        <p class="drop-zone-meta">${block.players.length} joueur(s) · ELO total ${Math.round(block.players.reduce((sum, p) => sum + Number(effectivePeakGlobal(p) || 0), 0))}</p>
+        <p class="drop-zone-meta">${block.players.length} joueur(s) · Peak ${cadenceLabel} total ${Math.round(block.players.reduce((sum, p) => sum + Number(cadencePeak(p, cadence) || 0), 0))}</p>
         ${block.players
           .map(
             (player) => `<article class="dnd-player" draggable="true" data-player-id="${player.id}">
               <div class="dnd-player-head">${avatarHTML(player, 'small')} <span>${player.display_name} ${player.is_captain ? '👑' : ''}</span><span class="drag-grip" aria-hidden="true">⋮⋮</span></div>
-              <small>${player.chess_username} · peak ${effectivePeakGlobal(player) || '-'}</small>
+              <small>${player.chess_username} · ${cadenceLabel} ${cadenceRating(player, cadence) ?? '-'} · Peak ${cadenceLabel} ${cadencePeak(player, cadence) ?? '-'}</small>
             </article>`,
           )
           .join('')}
@@ -566,6 +615,8 @@ function renderTeamDnD(teams, players) {
 }
 
 function renderPlayersTable() {
+  const cadence = selectedCadence();
+  const cadenceLabel = CADENCE_LABELS[cadence];
   const selectedTeam = Number(els.playersTeamFilter?.value || 0);
   const sortKey = els.playersSort?.value || 'name_asc';
   const search = (els.playersSearch?.value || '').trim().toLowerCase();
@@ -578,9 +629,9 @@ function renderPlayersTable() {
     if (sortKey === 'team_asc') {
       return (a.teams?.name || '').localeCompare(b.teams?.name || '') || a.display_name.localeCompare(b.display_name);
     }
-    if (sortKey === 'rapid_desc') return Number(b.rapid_rating || 0) - Number(a.rapid_rating || 0);
-    if (sortKey === 'rapid_asc') return Number(a.rapid_rating || 0) - Number(b.rapid_rating || 0);
-    if (sortKey === 'peak_global_desc') return Number(effectivePeakGlobal(b) || 0) - Number(effectivePeakGlobal(a) || 0);
+    if (sortKey === 'rapid_desc') return Number(cadenceRating(b, cadence) || 0) - Number(cadenceRating(a, cadence) || 0);
+    if (sortKey === 'rapid_asc') return Number(cadenceRating(a, cadence) || 0) - Number(cadenceRating(b, cadence) || 0);
+    if (sortKey === 'peak_global_desc') return Number(cadencePeak(b, cadence) || 0) - Number(cadencePeak(a, cadence) || 0);
     if (sortKey === 'name_desc') return b.display_name.localeCompare(a.display_name);
     return a.display_name.localeCompare(b.display_name);
   });
@@ -589,15 +640,15 @@ function renderPlayersTable() {
     els.players.innerHTML = '<p class="muted">Aucun joueur ne correspond aux filtres sélectionnés.</p>';
     return;
   }
-  els.players.innerHTML = `<table><thead><tr><th>Joueur</th><th>Équipe</th><th>Rapid</th><th>Blitz</th><th>Bullet</th><th>Peak rapid</th><th>Peak blitz</th><th>Peak bullet</th><th>Peak global</th></tr></thead><tbody>${filtered
+  els.players.innerHTML = `<table><thead><tr><th>Joueur</th><th>Équipe</th><th>${cadenceLabel}</th><th>Peak ${cadenceLabel.toLowerCase()}</th></tr></thead><tbody>${filtered
     .map(
-      (p) => `<tr><td><div class="player-cell">${avatarHTML(p, 'small')}${p.display_name} ${badge(p.is_captain)}</div></td><td>${p.teams?.name || '-'}</td><td>${p.rapid_rating ?? '-'}</td><td>${p.blitz_rating ?? '-'}</td><td>${p.bullet_rating ?? '-'}</td><td>${p.peak_rapid ?? '-'}</td><td>${p.peak_blitz ?? '-'}</td><td>${p.peak_bullet ?? '-'}</td><td>${effectivePeakGlobal(p) || '-'}</td></tr>`,
+      (p) => `<tr><td><div class="player-cell">${avatarHTML(p, 'small')}${p.display_name} ${badge(p.is_captain)}</div></td><td>${p.teams?.name || '-'}</td><td>${cadenceRating(p, cadence) ?? '-'}</td><td>${cadencePeak(p, cadence) ?? '-'}</td></tr>`,
     )
     .join('')}</tbody></table>`;
 }
 
 function playerStrengthValue(player) {
-  return Number(effectivePeakGlobal(player) || 0);
+  return Number(cadencePeak(player, selectedCadence()) || 0);
 }
 
 function computeTeamStrengths(teams, players) {
@@ -626,13 +677,28 @@ function imbalanceScore(strengthByTeam) {
 }
 
 async function loadClubIdentity() {
-  const clubUsername = 'ivoirechess';
-  const profile = await fetchChessProfile(clubUsername);
-  if (profile?.avatar_url && els.clubLogo) {
-    els.clubLogo.src = profile.avatar_url;
+  if (!els.clubLogo) return;
+  if (els.clubLogo.complete && els.clubLogo.naturalWidth > 0) {
     els.clubLogo.hidden = false;
     if (els.clubLogoFallback) els.clubLogoFallback.hidden = true;
+    return;
   }
+  els.clubLogo.addEventListener(
+    'load',
+    () => {
+      els.clubLogo.hidden = false;
+      if (els.clubLogoFallback) els.clubLogoFallback.hidden = true;
+    },
+    { once: true },
+  );
+  els.clubLogo.addEventListener(
+    'error',
+    () => {
+      els.clubLogo.hidden = true;
+      if (els.clubLogoFallback) els.clubLogoFallback.hidden = false;
+    },
+    { once: true },
+  );
 }
 
 function renderSwapRecommendations(teams, players) {
@@ -896,6 +962,13 @@ els.refreshPublic.onclick = loadPublic;
 els.playersTeamFilter?.addEventListener('change', renderPlayersTable);
 els.playersSort?.addEventListener('change', renderPlayersTable);
 els.playersSearch?.addEventListener('input', renderPlayersTable);
+els.tournamentCadence?.addEventListener('change', () => {
+  state.tournamentCadence = selectedCadence();
+  updatePlayersSortLabels();
+  renderPlayersTable();
+  renderTeamShowcase(state.teams, state.players);
+  renderTeamDnD(state.teams, state.players);
+});
 els.mobileMenuBtn?.addEventListener('click', () => {
   const expanded = els.mobileMenuBtn.getAttribute('aria-expanded') === 'true';
   els.mobileMenuBtn.setAttribute('aria-expanded', String(!expanded));
@@ -916,6 +989,8 @@ const observer = new IntersectionObserver((entries) => {
 for (const block of document.querySelectorAll('.reveal')) observer.observe(block);
 
 applySavedTheme();
+state.tournamentCadence = selectedCadence();
+updatePlayersSortLabels();
 const { data: authData } = await supabase.auth.getSession();
 updateAdminUI(authData.session);
 supabase.auth.onAuthStateChange((_event, session) => updateAdminUI(session));

@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Chess Team Masters — Tournoi d'Échecs par Équipes</title>
-    <meta name="description" content="Plateforme premium de suivi d'un tournoi d'échecs par équipes : classements, résultats, forces ELO et console admin." />
-    <meta property="og:title" content="Chess Team Masters" />
-    <meta property="og:description" content="Tournoi d'échecs par équipes avec suivi live, ELO Chess.com et outils admin avancés." />
+    <title>IvoireChess Tournament Manager</title>
+    <meta name="description" content="IvoireChess Tournament Manager : plateforme de gestion de tournois (échecs et autres formats) avec classements, résultats et console admin." />
+    <meta property="og:title" content="IvoireChess Tournament Manager" />
+    <meta property="og:description" content="Plateforme IvoireChess pour gérer des tournois multi-formats avec suivi live et outils admin." />
     <meta property="og:type" content="website" />
     <meta name="theme-color" content="#080c18" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -18,7 +18,7 @@
     <header class="app-header" id="top">
       <a class="brand" href="#top" aria-label="Retour en haut">
         <div class="brand-icon">
-          <img id="club-logo" alt="Logo du club ivoirechess" hidden />
+          <img id="club-logo" src="./assets/ivoirechess-logo.svg" alt="Logo IvoireChess Tournament Manager" />
           <span id="club-logo-fallback" aria-hidden="true">♟️</span>
         </div>
         <span>
@@ -63,6 +63,14 @@
         <div class="section-head">
           <h2>Vue publique</h2>
           <p class="muted">Résultats, classements et profils joueurs.</p>
+          <label style="max-width:260px">
+            Cadence du tournoi
+            <select id="tournament-cadence">
+              <option value="rapid" selected>Rapid</option>
+              <option value="blitz">Blitz</option>
+              <option value="bullet">Bullet</option>
+            </select>
+          </label>
         </div>
 
         <div class="grid two">
