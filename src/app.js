@@ -33,6 +33,14 @@ const els = {
   tournamentCadence: document.getElementById('tournament-cadence'),
   teamDnd: document.getElementById('team-dnd'),
   playersSearch: document.getElementById('players-search'),
+  heroStatus: document.getElementById('hero-status'),
+  heroTitle: document.getElementById('hero-title'),
+  heroFormatSummary: document.getElementById('hero-format-summary'),
+  heroNextMatch: document.getElementById('hero-next-match'),
+  heroNextTimer: document.getElementById('hero-next-timer'),
+  summaryDashboard: document.getElementById('summary-dashboard'),
+  featuredMatch: document.getElementById('featured-match'),
+  matchesTabs: document.getElementById('matches-tabs'),
   themeToggle: document.getElementById('theme-toggle'),
   mobileMenuBtn: document.getElementById('mobile-menu-btn'),
   topNav: document.getElementById('top-nav'),
@@ -48,6 +56,8 @@ const state = {
   adminSession: null,
   adminGamesCache: new Map(),
   tournamentCadence: 'rapid',
+  matchFilter: 'all',
+  matches: [],
 };
 
 for (const btn of document.querySelectorAll('.tab-btn')) {
@@ -232,6 +242,103 @@ function splitPoolsForDisplay(standings) {
   return grouped;
 }
 
+function matchStatusCategory(match) {
+  const status = (match?.status || '').toLowerCase();
+  if (status === 'live' || status === 'playing') return 'live';
+  if (status === 'finished' || status === 'validated') return 'completed';
+  return 'upcoming';
+}
+
+function matchStatusLabel(match) {
+  const category = matchStatusCategory(match);
+  if (category === 'live') return 'En cours';
+  if (category === 'completed') return 'Terminé';
+  return 'À venir';
+}
+
+function formatMatchDate(dateValue) {
+  if (!dateValue) return 'Date à confirmer';
+  return new Date(dateValue).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function findNextFeaturedMatch(matches) {
+  const now = Date.now();
+  const sorted = [...(matches || [])].sort((a, b) => new Date(a.scheduled_at || 0).getTime() - new Date(b.scheduled_at || 0).getTime());
+  const live = sorted.find((match) => matchStatusCategory(match) === 'live');
+  if (live) return live;
+  const upcoming = sorted.find((match) => {
+    const timestamp = new Date(match.scheduled_at || 0).getTime();
+    return timestamp >= now && matchStatusCategory(match) === 'upcoming';
+  });
+  if (upcoming) return upcoming;
+  return sorted.find((match) => matchStatusCategory(match) === 'completed') || null;
+}
+
+function renderHeroAndSummary(standings, matches, teams) {
+  const totalTeams = teams?.length || 0;
+  const pools = new Set((teams || []).map((team) => team.pool).filter(Boolean));
+  const boards = 4;
+  const featured = findNextFeaturedMatch(matches);
+  const featuredTeams = featured ? `${featured.team_a?.name || '?'} vs ${featured.team_b?.name || '?'}` : 'Match à confirmer';
+  const featuredDate = featured ? formatMatchDate(featured.scheduled_at) : 'Planning en cours';
+  const hasLive = (matches || []).some((match) => matchStatusCategory(match) === 'live');
+  const hasUpcoming = (matches || []).some((match) => matchStatusCategory(match) === 'upcoming');
+  const status = hasLive ? 'live' : hasUpcoming ? 'scheduled' : 'finished';
+  const leadersByPool = new Map();
+  for (const row of standings || []) {
+    if (!leadersByPool.has(row.pool) || Number(row.rank_in_pool) === 1) leadersByPool.set(row.pool, row);
+  }
+  const leaderA = leadersByPool.get('A');
+  const leaderB = leadersByPool.get('B');
+
+  if (els.heroStatus) {
+    els.heroStatus.className = `status-badge status-${status}`;
+    els.heroStatus.textContent = status === 'live' ? 'LIVE' : status === 'scheduled' ? 'UPCOMING' : 'FINISHED';
+  }
+  if (els.heroFormatSummary) {
+    els.heroFormatSummary.textContent = `Format: ${totalTeams} équipes · ${Math.max(pools.size, 2)} poules · ${boards} boards par match.`;
+  }
+  if (els.heroNextMatch) {
+    els.heroNextMatch.classList.remove('skeleton');
+    els.heroNextMatch.innerHTML = `<article class="match-feature-card">
+      <h4>Match en lumière</h4>
+      <p class="teams">${featuredTeams}</p>
+      <p class="muted">${featuredDate} · ${featured ? matchStatusLabel(featured) : 'En attente'}</p>
+    </article>`;
+  }
+  if (els.heroNextTimer) {
+    els.heroNextTimer.textContent = featured ? formatMatchDate(featured.scheduled_at) : 'À confirmer';
+  }
+  if (els.summaryDashboard) {
+    els.summaryDashboard.classList.remove('skeleton');
+    els.summaryDashboard.innerHTML = `
+      <article class="stat-tile"><p class="stat-label">Leader Pool A</p><p class="stat-value">${leaderA?.team_name || 'TBD'}</p><p class="stat-context">${leaderA ? `${leaderA.points} pts · diff ${leaderA.goal_diff}` : 'Aucun score'}</p></article>
+      <article class="stat-tile"><p class="stat-label">Leader Pool B</p><p class="stat-value">${leaderB?.team_name || 'TBD'}</p><p class="stat-context">${leaderB ? `${leaderB.points} pts · diff ${leaderB.goal_diff}` : 'Aucun score'}</p></article>
+      <article class="stat-tile"><p class="stat-label">Prochain match</p><p class="stat-value">${featuredTeams}</p><p class="stat-context">${featuredDate}</p></article>
+      <article class="stat-tile"><p class="stat-label">Champion en titre</p><p class="stat-value">yoann565</p><p class="stat-context">Référence de la saison précédente</p></article>
+    `;
+  }
+  if (els.featuredMatch) {
+    els.featuredMatch.classList.remove('skeleton');
+    els.featuredMatch.innerHTML = `<article class="match-feature-card">
+      <h4>Featured Match</h4>
+      <p class="teams">${featuredTeams}</p>
+      <p class="muted">${featuredDate} · ${featured ? matchStatusLabel(featured) : 'À venir'}</p>
+    </article>`;
+  }
+}
+
+function renderMatchesByFilter(matches) {
+  const filter = state.matchFilter || 'all';
+  const visibleMatches = (matches || []).filter((match) => (filter === 'all' ? true : matchStatusCategory(match) === filter));
+  els.matches.classList.remove('skeleton');
+  els.matches.innerHTML = !visibleMatches.length
+    ? '<div class="empty-state"><p class="empty-icon">♟️</p><p>Aucun match dans ce filtre.</p></div>'
+    : `<table><thead><tr><th>Date</th><th>Phase</th><th>Match</th><th>Score</th><th>Statut</th></tr></thead><tbody>${visibleMatches
+      .map((m) => `<tr><td>${formatMatchDate(m.scheduled_at)}</td><td>${m.phase}</td><td>${m.team_a?.name || '?'} vs ${m.team_b?.name || '?'}</td><td>${m.score_a ?? '-'} - ${m.score_b ?? '-'}</td><td><span class="status-pill status-${matchStatusCategory(m)}">${matchStatusLabel(m)}</span></td></tr>`)
+      .join('')}</tbody></table>`;
+}
+
 function attachDnDHandlers(container) {
   if (!container) return;
   for (const playerEl of container.querySelectorAll('[data-player-id]')) {
@@ -290,6 +397,7 @@ async function loadPublic() {
     ...team,
     pool: team.pool || poolByTeamId.get(team.team_id) || '—',
   }));
+  renderHeroAndSummary(standings, matches || [], rawTeams || []);
 
   els.standings.classList.remove('skeleton');
   if (!standings?.length) {
@@ -311,12 +419,7 @@ async function loadPublic() {
       .join('')}</div>`;
   }
 
-  els.matches.classList.remove('skeleton');
-  els.matches.innerHTML = !matches?.length
-    ? '<p class="muted">Aucun match planifié.</p>'
-    : `<table><thead><tr><th>Date</th><th>Phase</th><th>Match</th><th>Score</th><th>Statut</th></tr></thead><tbody>${(matches || [])
-        .map((m) => `<tr><td>${m.scheduled_at ? new Date(m.scheduled_at).toLocaleString('fr-FR') : '-'}</td><td>${m.phase}</td><td>${m.team_a?.name || '?'} vs ${m.team_b?.name || '?'}</td><td>${m.score_a ?? '-'} - ${m.score_b ?? '-'}</td><td>${m.status}</td></tr>`)
-        .join('')}</tbody></table>`;
+  renderMatchesByFilter(matches || []);
 
   const semis = (matches || []).filter((m) => m.phase === 'semi');
   const final = (matches || []).find((m) => m.phase === 'final');
@@ -327,6 +430,7 @@ async function loadPublic() {
 
   state.teams = teams || [];
   state.players = players || [];
+  state.matches = matches || [];
   renderPlayersTable();
   enrichVisiblePlayersData(state.players);
 
@@ -959,6 +1063,17 @@ els.overrideForm.addEventListener('submit', async (e) => {
 });
 
 els.refreshPublic.onclick = loadPublic;
+els.matchesTabs?.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-match-filter]');
+  if (!button) return;
+  state.matchFilter = button.dataset.matchFilter || 'all';
+  for (const tab of els.matchesTabs.querySelectorAll('[data-match-filter]')) {
+    const isActive = tab === button;
+    tab.classList.toggle('active', isActive);
+    tab.setAttribute('aria-selected', String(isActive));
+  }
+  renderMatchesByFilter(state.matches);
+});
 els.playersTeamFilter?.addEventListener('change', renderPlayersTable);
 els.playersSort?.addEventListener('change', renderPlayersTable);
 els.playersSearch?.addEventListener('input', renderPlayersTable);

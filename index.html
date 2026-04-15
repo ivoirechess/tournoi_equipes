@@ -41,29 +41,48 @@
       </nav>
     </header>
 
-    <main>
-      <section class="hero reveal">
-        <div>
-          <p class="eyebrow">🔥 Tournoi par équipes</p>
-          <h1>La plateforme moderne pour suivre et gérer votre ligue d'échecs.</h1>
-          <p class="hero-sub">Classements en direct, profils enrichis Chess.com, forces ELO et outils admin avancés — tout en un.</p>
+    <main class="app-main">
+      <section class="hero event-hero reveal">
+        <div class="hero-main">
+          <p class="eyebrow">IvoireChess · Saison Team Cup</p>
+          <div class="hero-status-line">
+            <span id="hero-status" class="status-badge status-live">LIVE</span>
+            <span class="hero-meta">Finales & classement en direct</span>
+          </div>
+          <h1 id="hero-title">IvoireChess Team Championship — Champion en titre: <span>yoann565</span></h1>
+          <p class="hero-sub" id="hero-format-summary">Format: 6 équipes · 2 poules · 4 boards par match.</p>
+          <div id="hero-next-match" class="hero-featured-match card card-compact skeleton"></div>
           <div class="hero-actions">
-            <button class="btn primary" data-tab-link="public">Voir le classement</button>
+            <a class="btn primary" href="#standings-section">Voir le classement</a>
+            <a class="btn secondary" href="#matches-section">Voir les matchs</a>
+            <a class="btn ghost" href="#bracket-section">Voir le bracket</a>
             <button class="btn ghost" data-tab-link="admin">Console admin</button>
           </div>
         </div>
-        <div class="hero-kpis">
-          <div class="kpi-card"><b>6+</b><small>Équipes</small></div>
-          <div class="kpi-card"><b>4</b><small>Boards</small></div>
-          <div class="kpi-card"><b>Live</b><small>Chess.com</small></div>
+        <div class="hero-aside">
+          <div class="kpi-card">
+            <small>Champion en titre</small>
+            <b>yoann565</b>
+          </div>
+          <div class="kpi-card">
+            <small>Prochain match</small>
+            <b id="hero-next-timer">À définir</b>
+          </div>
+          <div class="kpi-card">
+            <small>Format</small>
+            <b>2 Pools · 4 Boards</b>
+          </div>
         </div>
       </section>
 
-      <section id="public-tab" class="tab-panel active reveal">
+      <section id="public-tab" class="tab-panel active reveal public-experience">
         <div class="section-head">
-          <h2>Vue publique</h2>
-          <p class="muted">Résultats, classements et profils joueurs.</p>
-          <label style="max-width:260px">
+          <div>
+            <p class="section-kicker">Public Experience</p>
+            <h2>Suivi du tournoi</h2>
+            <p class="muted">Classements, affiches, résultats et profils des équipes.</p>
+          </div>
+          <label class="control-inline" style="max-width:260px">
             Cadence du tournoi
             <select id="tournament-cadence">
               <option value="rapid" selected>Rapid</option>
@@ -73,30 +92,71 @@
           </label>
         </div>
 
-        <div class="grid two">
-          <article class="card">
-            <h2>Classement des poules</h2>
-            <div id="standings" class="skeleton"></div>
-          </article>
-          <article class="card">
-            <h2>Phase finale</h2>
-            <div id="bracket" class="skeleton"></div>
-          </article>
-        </div>
+        <section id="summary-section" class="section-wrapper card card-secondary">
+          <div class="section-head compact">
+            <div>
+              <p class="section-kicker">Tournament Summary</p>
+              <h3>Tableau de bord événement</h3>
+            </div>
+          </div>
+          <div id="summary-dashboard" class="stats-grid skeleton"></div>
+        </section>
 
-        <article class="card">
-          <h2>Planning & résultats</h2>
+        <section id="standings-section" class="section-wrapper card">
+          <div class="section-head compact">
+            <div>
+              <p class="section-kicker">Standings</p>
+              <h3>Classement des poules</h3>
+            </div>
+          </div>
+          <div id="standings" class="skeleton"></div>
+        </section>
+
+        <section id="matches-section" class="section-wrapper card">
+          <div class="section-head compact">
+            <div>
+              <p class="section-kicker">Matches</p>
+              <h3>Affiches & résultats</h3>
+            </div>
+            <div id="matches-tabs" class="pill-tabs" role="tablist" aria-label="Filtre des matchs">
+              <button class="pill-tab active" data-match-filter="all" role="tab" aria-selected="true">Tous</button>
+              <button class="pill-tab" data-match-filter="upcoming" role="tab" aria-selected="false">Upcoming</button>
+              <button class="pill-tab" data-match-filter="live" role="tab" aria-selected="false">Live</button>
+              <button class="pill-tab" data-match-filter="completed" role="tab" aria-selected="false">Completed</button>
+            </div>
+          </div>
+          <div id="featured-match" class="featured-match-card skeleton"></div>
           <div id="matches" class="table-wrap skeleton"></div>
-        </article>
+        </section>
 
-        <article class="card">
-          <h2>Vitrine détaillée des équipes</h2>
-          <p class="muted" style="margin-bottom:1rem">Force ELO, effectif complet, stats joueurs et glisser-déposer.</p>
+        <section id="bracket-section" class="section-wrapper card">
+          <div class="section-head compact">
+            <div>
+              <p class="section-kicker">Playoffs</p>
+              <h3>Phase finale</h3>
+            </div>
+          </div>
+          <div id="bracket" class="skeleton"></div>
+        </section>
+
+        <section id="teams-section" class="section-wrapper card">
+          <div class="section-head compact">
+            <div>
+              <p class="section-kicker">Teams</p>
+              <h3>Vitrine des équipes</h3>
+              <p class="muted">Capitaines, force ELO et roster complet.</p>
+            </div>
+          </div>
           <div id="team-showcase" class="team-showcase skeleton"></div>
-        </article>
+        </section>
 
-        <article class="card">
-          <h2>Profils joueurs</h2>
+        <section id="players-section" class="section-wrapper card">
+          <div class="section-head compact">
+            <div>
+              <p class="section-kicker">Players</p>
+              <h3>Profils joueurs</h3>
+            </div>
+          </div>
           <div class="grid three" style="margin-bottom:1rem">
             <label>
               Filtrer par équipe
@@ -121,17 +181,23 @@
             </label>
           </div>
           <div id="players" class="table-wrap skeleton"></div>
-        </article>
+        </section>
       </section>
 
-      <section id="admin-tab" class="tab-panel reveal">
+      <section id="admin-tab" class="tab-panel reveal admin-experience">
         <div class="section-head">
-          <h2>Console admin</h2>
-          <p class="muted">Gestion des équipes, joueurs, scores et imports Chess.com.</p>
+          <div>
+            <p class="section-kicker">Admin Control Panel</p>
+            <h2>Console de contrôle</h2>
+            <p class="muted">Pilote les équipes, les scores, les imports et les actions sensibles du tournoi.</p>
+          </div>
         </div>
 
-        <article class="card">
-          <h2>Connexion admin</h2>
+        <article class="card admin-module">
+          <div class="module-head">
+            <h3>Authentification</h3>
+            <p class="muted">Connecte un compte administrateur pour activer les actions de modification.</p>
+          </div>
           <div class="admin-session-row">
             <p id="auth-state">Non connecté</p>
             <button type="button" id="admin-logout" class="btn ghost">Se déconnecter</button>
@@ -143,8 +209,11 @@
           </form>
         </article>
 
-        <article class="card">
-          <h2>Gestion équipes & joueurs</h2>
+        <article class="card admin-module">
+          <div class="module-head">
+            <h3>Gestion des équipes & joueurs</h3>
+            <p class="muted">Crée les entités et organise les rosters via drag & drop.</p>
+          </div>
           <div class="grid two" style="margin-bottom:1.2rem">
             <form id="team-form">
               <h3>Ajouter une équipe</h3>
@@ -171,20 +240,26 @@
           <div id="admin-rosters" class="table-wrap" style="margin-top:1rem"></div>
         </article>
 
-        <article class="card">
-          <h2>Override score de match</h2>
+        <article class="card admin-module danger-zone">
+          <div class="module-head">
+            <h3>Override score de match</h3>
+            <p class="muted">Force un score validé manuellement pour un match.</p>
+          </div>
           <form id="override-form" class="grid three">
             <label>Match<select id="override-match"></select></label>
             <label>Score équipe A<input id="override-score-a" type="number" min="0" max="4" step="0.5" required /></label>
             <label>Score équipe B<input id="override-score-b" type="number" min="0" max="4" step="0.5" required /></label>
             <label>Diff. buts A<input id="override-goal-a" type="number" required /></label>
             <label>Diff. buts B<input id="override-goal-b" type="number" required /></label>
-            <button type="submit" class="btn primary" style="align-self:flex-end">Appliquer</button>
+            <button type="submit" class="btn danger-btn" style="align-self:flex-end">Appliquer</button>
           </form>
         </article>
 
-        <article class="card">
-          <h2>Actions tournoi</h2>
+        <article class="card admin-module">
+          <div class="module-head">
+            <h3>Actions tournoi</h3>
+            <p class="muted">Pilote les étapes globales: tirage, playoffs, sync et refresh public.</p>
+          </div>
           <div class="grid four">
             <button id="draw-groups">🎲 Tirer les poules</button>
             <button id="generate-playoffs">🏆 Générer playoffs</button>
@@ -193,14 +268,19 @@
           </div>
         </article>
 
-        <article class="card">
-          <h2>Équilibrage automatique</h2>
-          <p class="muted" style="margin-bottom:0.8rem">Suggestions de swaps (hors capitaines) pour équilibrer les forces.</p>
+        <article class="card admin-module">
+          <div class="module-head">
+            <h3>Équilibrage automatique</h3>
+            <p class="muted">Suggestions de swaps (hors capitaines) pour rapprocher les forces d'équipes.</p>
+          </div>
           <div id="swap-recommendations" class="table-wrap"></div>
         </article>
 
-        <article class="card">
-          <h2>Import parties Chess.com</h2>
+        <article class="card admin-module">
+          <div class="module-head">
+            <h3>Import parties Chess.com</h3>
+            <p class="muted">Définit les fenêtres de collecte et importe les parties automatiquement.</p>
+          </div>
           <form id="window-form" class="grid three" style="margin-bottom:1rem">
             <label>Match<select id="window-match"></select></label>
             <label>Board #<input type="number" id="window-board" min="1" max="4" required /></label>
