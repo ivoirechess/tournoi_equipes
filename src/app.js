@@ -1,1115 +1,552 @@
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-const supabase = createClient(
-  'https://lxjxbmuspnqvetpdlubd.supabase.co',
-  'sb_publishable_n8xNMYSowjMtKHeQdnnNuA_ZUIqH5m2',
-);
 const els = {
+  summaryGrid: document.getElementById('summary-grid'),
   standings: document.getElementById('standings'),
-  matches: document.getElementById('matches'),
-  bracket: document.getElementById('bracket'),
-  teams: document.getElementById('teams'),
-  teamShowcase: document.getElementById('team-showcase'),
-  players: document.getElementById('players'),
-  authForm: document.getElementById('auth-form'),
-  authState: document.getElementById('auth-state'),
-  adminLogout: document.getElementById('admin-logout'),
-  teamForm: document.getElementById('team-form'),
-  playerForm: document.getElementById('player-form'),
-  rosterBox: document.getElementById('admin-rosters'),
-  overrideForm: document.getElementById('override-form'),
-  overrideMatch: document.getElementById('override-match'),
-  playerTeam: document.getElementById('player-team'),
-  drawGroups: document.getElementById('draw-groups'),
-  generatePlayoffs: document.getElementById('generate-playoffs'),
-  syncElo: document.getElementById('sync-elo'),
-  refreshPublic: document.getElementById('refresh-public'),
-  windowForm: document.getElementById('window-form'),
-  windowMatch: document.getElementById('window-match'),
-  syncGames: document.getElementById('sync-games'),
-  adminGames: document.getElementById('admin-games'),
-  swapRecommendations: document.getElementById('swap-recommendations'),
-  playersTeamFilter: document.getElementById('players-team-filter'),
-  playersSort: document.getElementById('players-sort'),
-  tournamentCadence: document.getElementById('tournament-cadence'),
-  teamDnd: document.getElementById('team-dnd'),
-  playersSearch: document.getElementById('players-search'),
-  heroStatus: document.getElementById('hero-status'),
-  heroTitle: document.getElementById('hero-title'),
-  heroFormatSummary: document.getElementById('hero-format-summary'),
-  heroNextMatch: document.getElementById('hero-next-match'),
-  heroNextTimer: document.getElementById('hero-next-timer'),
-  summaryDashboard: document.getElementById('summary-dashboard'),
-  featuredMatch: document.getElementById('featured-match'),
-  matchesTabs: document.getElementById('matches-tabs'),
-  themeToggle: document.getElementById('theme-toggle'),
-  mobileMenuBtn: document.getElementById('mobile-menu-btn'),
-  topNav: document.getElementById('top-nav'),
+  matchesGrid: document.getElementById('matches-grid'),
+  teamsGrid: document.getElementById('teams-grid'),
+  playersGrid: document.getElementById('players-grid'),
+  livePill: document.getElementById('live-pill'),
+  weekendState: document.getElementById('weekend-state'),
+  matchFilters: document.getElementById('match-filters'),
+  playerTeamFilter: document.getElementById('player-team-filter'),
+  playerSort: document.getElementById('player-sort'),
+  playerSearch: document.getElementById('player-search'),
+  adminAccess: document.getElementById('admin-access'),
+  adminPanel: document.getElementById('admin-panel'),
+  adminMatches: document.getElementById('admin-matches'),
+  adminBoards: document.getElementById('admin-boards'),
+  boardDrawer: document.getElementById('board-drawer'),
+  drawerTitle: document.getElementById('drawer-title'),
+  drawerSubtitle: document.getElementById('drawer-subtitle'),
+  drawerClose: document.getElementById('drawer-close'),
+  rangeStart: document.getElementById('range-start'),
+  rangeEnd: document.getElementById('range-end'),
+  importGames: document.getElementById('import-games'),
+  importFeedback: document.getElementById('import-feedback'),
+  duelPills: document.getElementById('duel-pills'),
+  manualA: document.getElementById('manual-a'),
+  manualB: document.getElementById('manual-b'),
+  manualGdA: document.getElementById('manual-gd-a'),
+  manualGdB: document.getElementById('manual-gd-b'),
+  applyOverride: document.getElementById('apply-override'),
+  validateBoard: document.getElementById('validate-board'),
+  overrideLog: document.getElementById('override-log'),
+  exportResults: document.getElementById('export-results'),
   toast: document.getElementById('toast'),
-  clubLogo: document.getElementById('club-logo'),
-  clubLogoFallback: document.getElementById('club-logo-fallback'),
 };
+
 const state = {
-  teams: [],
-  players: [],
-  chessCache: new Map(),
-  pendingCache: new Set(),
-  adminSession: null,
-  adminGamesCache: new Map(),
-  tournamentCadence: 'rapid',
+  tournament: null,
+  results: null,
   matchFilter: 'all',
-  matches: [],
+  playerFilterTeam: '',
+  playerSort: 'elo_desc',
+  playerSearch: '',
+  adminUnlocked: false,
+  selectedMatchId: null,
+  selectedBoard: null,
+  pollingTimer: null,
 };
 
-for (const btn of document.querySelectorAll('.tab-btn')) {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
-    document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById(`${btn.dataset.tab}-tab`).classList.add('active');
+const STORAGE_RESULTS_KEY = 'ivoirechess.results.v2';
+const STORAGE_ARCHIVE_KEY = 'ivoirechess.chesscom.archives.v1';
+const STORAGE_LOG_KEY = 'ivoirechess.override.log.v1';
+
+init();
+
+async function init() {
+  const [tournament, baseResults] = await Promise.all([
+    fetch('./data/tournament.json').then((r) => r.json()),
+    fetch('./data/results.json').then((r) => r.json()),
+  ]);
+  state.tournament = tournament;
+  state.results = hydrateResults(baseResults);
+  wireEvents();
+  populatePlayerFilter();
+  renderAll();
+  startConditionalPolling();
+}
+
+function hydrateResults(baseResults) {
+  const local = readJSON(STORAGE_RESULTS_KEY);
+  const merged = structuredClone(baseResults);
+  if (local?.matches) {
+    for (const [matchId, matchData] of Object.entries(local.matches)) {
+      merged.matches[matchId] = { ...(merged.matches[matchId] || {}), ...matchData };
+    }
+  }
+  merged.overrideLog = readJSON(STORAGE_LOG_KEY) || [];
+  return merged;
+}
+
+function wireEvents() {
+  els.matchFilters.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-filter]');
+    if (!btn) return;
+    state.matchFilter = btn.dataset.filter;
+    [...els.matchFilters.querySelectorAll('.seg')].forEach((el) => el.classList.toggle('active', el === btn));
+    renderMatches();
+  });
+  els.playerTeamFilter.addEventListener('change', () => {
+    state.playerFilterTeam = els.playerTeamFilter.value;
+    renderPlayers();
+  });
+  els.playerSort.addEventListener('change', () => {
+    state.playerSort = els.playerSort.value;
+    renderPlayers();
+  });
+  els.playerSearch.addEventListener('input', () => {
+    state.playerSearch = els.playerSearch.value.trim().toLowerCase();
+    renderPlayers();
+  });
+  els.adminAccess.addEventListener('click', unlockAdmin);
+  els.drawerClose.addEventListener('click', closeDrawer);
+  els.importGames.addEventListener('click', importBoardGames);
+  els.applyOverride.addEventListener('click', applyManualOverride);
+  els.validateBoard.addEventListener('click', validateBoard);
+  els.exportResults.addEventListener('click', exportResultsJSON);
+}
+
+function renderAll() {
+  renderHeroState();
+  renderSummary();
+  renderStandings();
+  renderMatches();
+  renderTeams();
+  renderPlayers();
+  renderAdminMatches();
+  renderOverrideLog();
+}
+
+function renderHeroState() {
+  const now = new Date();
+  const live = isLiveWindow(now);
+  els.livePill.textContent = live ? 'LIVE' : 'PROCHAIN MATCH';
+  els.livePill.classList.toggle('live', live);
+  const week = getCurrentWeekendDescriptor(now);
+  els.weekendState.textContent = week;
+}
+
+function getCurrentWeekendDescriptor(now) {
+  const rounds = state.tournament.rounds;
+  const current = rounds.find((r) => now >= new Date(r.start) && now <= new Date(r.end));
+  if (current) return `🔴 WEEK-END ${current.weekend} EN COURS`;
+  const next = rounds.find((r) => now < new Date(r.start));
+  if (!next) return 'Tournoi terminé';
+  const diffDays = Math.ceil((new Date(next.start) - now) / 86400000);
+  return `PROCHAIN MATCH DANS ${Math.max(diffDays, 0)}J`;
+}
+
+function renderSummary() {
+  const nextMatch = [...state.tournament.matches]
+    .sort((a, b) => new Date(a.kickoff) - new Date(b.kickoff))
+    .find((m) => new Date(m.kickoff) > new Date());
+  const leaders = computeStandingsByPool();
+  const summary = [
+    { label: 'Prochain match', value: nextMatch ? `${teamById(nextMatch.teamA).name} vs ${teamById(nextMatch.teamB).name}` : 'Terminé' },
+    { label: 'Semaine actuelle', value: getCurrentWeekendDescriptor(new Date()).replace('🔴 ', '') },
+    { label: 'Leaders poules', value: `A: ${leaders.A?.[0]?.name || '—'} · B: ${leaders.B?.[0]?.name || '—'}` },
+  ];
+  els.summaryGrid.innerHTML = summary.map((item) => `<article class="summary-tile"><p>${item.label}</p><b>${item.value}</b></article>`).join('');
+}
+
+function renderStandings() {
+  const byPool = computeStandingsByPool();
+  els.standings.innerHTML = ['A', 'B'].map((pool) => renderPoolTable(pool, byPool[pool] || [])).join('');
+}
+
+function renderPoolTable(pool, rows) {
+  const body = rows.map((row, idx) => `
+    <tr class="${idx < 2 ? 'qualif' : ''}">
+      <td class="rank">#${idx + 1}${idx === 0 ? ' 🏅' : ''}</td>
+      <td>${avatarHTML(row.name)} ${row.name}</td>
+      <td>${row.j}</td><td>${row.v}</td><td>${row.d}</td>
+      <td class="pts">${row.pts.toFixed(1)}</td>
+      <td>${row.gd > 0 ? `+${row.gd}` : row.gd}</td>
+    </tr>`).join('');
+  return `<div class="pool-table"><table><thead><tr><th colspan="7">Poule ${pool}</th></tr><tr><th>Rang</th><th>Équipe</th><th>J</th><th>V</th><th>D</th><th>Pts</th><th>GD</th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+function computeStandingsByPool() {
+  const map = { A: [], B: [] };
+  for (const team of state.tournament.teams) {
+    map[team.pool].push({ id: team.id, name: team.name, j: 0, v: 0, d: 0, pts: 0, gd: 0 });
+  }
+  for (const match of state.tournament.matches) {
+    const score = computeMatchScore(match.id);
+    if (!score.played) continue;
+    const teamA = map[match.pool].find((t) => t.id === match.teamA);
+    const teamB = map[match.pool].find((t) => t.id === match.teamB);
+    teamA.j += 1; teamB.j += 1;
+    teamA.pts += score.pointsA; teamB.pts += score.pointsB;
+    teamA.gd += score.gdA; teamB.gd += score.gdB;
+    if (score.pointsA > score.pointsB) { teamA.v += 1; teamB.d += 1; }
+    else if (score.pointsB > score.pointsA) { teamB.v += 1; teamA.d += 1; }
+  }
+  for (const pool of ['A', 'B']) {
+    map[pool].sort((a, b) => b.pts - a.pts || b.gd - a.gd || a.name.localeCompare(b.name));
+  }
+  return map;
+}
+
+function renderMatches() {
+  const filtered = state.tournament.matches.filter((m) => state.matchFilter === 'all' || state.matchFilter === matchStatus(m));
+  els.matchesGrid.innerHTML = filtered.map((match) => renderMatchCard(match, false)).join('');
+  els.matchesGrid.querySelectorAll('[data-match-id]').forEach((node) => {
+    node.addEventListener('click', () => {
+      state.selectedMatchId = node.dataset.matchId;
+      if (state.adminUnlocked) renderBoardsForSelectedMatch();
+    });
   });
 }
 
-for (const btn of document.querySelectorAll('[data-tab-link]')) {
-  btn.addEventListener('click', () => {
-    const tab = btn.dataset.tabLink;
-    document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
-    document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('active', p.id === `${tab}-tab`));
+function renderMatchCard(match, forAdmin) {
+  const score = computeMatchScore(match.id);
+  const teamA = teamById(match.teamA);
+  const teamB = teamById(match.teamB);
+  const status = matchStatus(match);
+  const label = status === 'upcoming' ? 'À VENIR' : status === 'live' ? 'LIVE' : 'TERMINÉ';
+  const statusClass = status === 'live' ? 'status-pill live' : 'status-pill';
+  const scoreText = status === 'upcoming' ? `WEEK-END ${match.weekend} · SAM/DIM 19H00` : `${score.pointsA.toFixed(1)} — ${score.pointsB.toFixed(1)} · GD ${score.gdA > 0 ? '+' : ''}${score.gdA}`;
+  return `<article class="match-card" data-match-id="${match.id}">
+    <div><span class="${statusClass}">${label}</span> <small class="muted">Poule ${match.pool} · ${new Date(match.kickoff).toLocaleDateString('fr-FR')}</small></div>
+    <h3>${teamA.name} <span class="vs">VS</span> ${teamB.name}</h3>
+    <div class="score">${scoreText}</div>
+    ${forAdmin ? '<small class="muted">Cliquer pour gérer les 5 échiquiers</small>' : ''}
+  </article>`;
+}
+
+function renderTeams() {
+  els.teamsGrid.innerHTML = state.tournament.teams.map((team) => {
+    const roster = playersByTeam(team.id);
+    const total = roster.reduce((sum, p) => sum + p.eloRapid, 0);
+    const captain = roster.find((p) => p.captain);
+    return `<article class="team-card"><div class="avatar-ring"><span>${initials(captain?.name || team.name)}</span></div>
+      <h3>${team.name}</h3><p class="muted">Poule ${team.pool}</p>
+      <ol class="player-list">${roster.map((p) => `<li>${p.name} · ${p.eloRapid}${p.captain ? ' ★' : ''}</li>`).join('')}</ol>
+      <b>Total ELO: ${total}</b></article>`;
+  }).join('');
+}
+
+function populatePlayerFilter() {
+  els.playerTeamFilter.innerHTML = `<option value="">Toutes les équipes</option>${state.tournament.teams.map((t) => `<option value="${t.id}">${t.name}</option>`).join('')}`;
+}
+
+function renderPlayers() {
+  let list = [...state.tournament.players];
+  if (state.playerFilterTeam) list = list.filter((p) => p.teamId === state.playerFilterTeam);
+  if (state.playerSearch) list = list.filter((p) => `${p.name} ${p.chesscom}`.toLowerCase().includes(state.playerSearch));
+  if (state.playerSort === 'elo_desc') list.sort((a, b) => b.eloRapid - a.eloRapid);
+  if (state.playerSort === 'name_asc') list.sort((a, b) => a.name.localeCompare(b.name));
+  if (state.playerSort === 'team_asc') list.sort((a, b) => teamById(a.teamId).name.localeCompare(teamById(b.teamId).name));
+  els.playersGrid.innerHTML = list.map((p) => `<article class="player-card"><div class="avatar-ring"><span>${initials(p.name)}</span></div><h4>${p.name}${p.captain ? ' ★' : ''}</h4><p>ELO ${p.eloRapid}</p><small class="muted">${teamById(p.teamId).name}</small></article>`).join('');
+}
+
+function unlockAdmin() {
+  const pass = prompt('Code admin');
+  if (pass !== 'ivoire2026') {
+    toast('Code invalide.');
+    return;
+  }
+  state.adminUnlocked = true;
+  els.adminPanel.classList.remove('hidden');
+  renderAdminMatches();
+}
+
+function renderAdminMatches() {
+  if (!state.adminUnlocked) return;
+  els.adminMatches.innerHTML = state.tournament.matches.map((m) => renderMatchCard(m, true)).join('');
+  els.adminMatches.querySelectorAll('[data-match-id]').forEach((node) => {
+    node.addEventListener('click', () => {
+      state.selectedMatchId = node.dataset.matchId;
+      renderBoardsForSelectedMatch();
+    });
+  });
+  renderBoardsForSelectedMatch();
+}
+
+function renderBoardsForSelectedMatch() {
+  if (!state.selectedMatchId) {
+    els.adminBoards.innerHTML = '<p class="muted">Sélectionnez un match.</p>';
+    return;
+  }
+  const match = matchById(state.selectedMatchId);
+  const result = state.results.matches[match.id] || { boards: {} };
+  els.adminBoards.innerHTML = match.boards.map((board) => {
+    const boardResult = result.boards[board.board] || {};
+    const dots = [0, 1, 2, 3].map((i) => `<span class="pill-result ${boardResult.games?.[i]?.resultClass || 'd'}">${boardResult.games?.[i]?.short || '·'}</span>`).join('');
+    return `<article class="board-card" data-board="${board.board}"><h4>ÉCHIQUIER ${board.board}</h4>
+      <p>${playerById(board.playerA).name} <span class="vs">VS</span> ${playerById(board.playerB).name}</p>
+      <p><b>${board.board === 1 ? '2 PTS' : '1 PT'}</b> · ${matchStatus(match).toUpperCase()}</p>
+      <div class="duel-pills">${dots}</div></article>`;
+  }).join('');
+  els.adminBoards.querySelectorAll('[data-board]').forEach((node) => {
+    node.addEventListener('click', () => openBoardDrawer(match.id, Number(node.dataset.board)));
   });
 }
 
-const badge = (isCaptain) => (isCaptain ? '<span class="badge">👑 Capitaine</span>' : '');
-const CADENCE_LABELS = { rapid: 'Rapid', blitz: 'Blitz', bullet: 'Bullet' };
-
-function selectedCadence() {
-  const value = els.tournamentCadence?.value || state.tournamentCadence || 'rapid';
-  if (!['rapid', 'blitz', 'bullet'].includes(value)) return 'rapid';
-  return value;
+function openBoardDrawer(matchId, boardNo) {
+  const match = matchById(matchId);
+  const board = match.boards.find((b) => b.board === boardNo);
+  state.selectedBoard = { matchId, boardNo };
+  els.drawerTitle.textContent = `Échiquier ${boardNo}`;
+  els.drawerSubtitle.textContent = `${playerById(board.playerA).name} (${playerById(board.playerA).eloRapid}) vs ${playerById(board.playerB).name} (${playerById(board.playerB).eloRapid})`;
+  const defaults = match.window || { start: match.kickoff.slice(0, 10), end: match.kickoff.slice(0, 10) };
+  els.rangeStart.value = defaults.start;
+  els.rangeEnd.value = defaults.end;
+  fillBoardDrawerData(matchId, boardNo);
+  els.boardDrawer.classList.add('open');
+  els.boardDrawer.setAttribute('aria-hidden', 'false');
 }
 
-function ratingField(cadence) {
-  return `${cadence}_rating`;
+function fillBoardDrawerData(matchId, boardNo) {
+  const boardResult = state.results.matches?.[matchId]?.boards?.[boardNo];
+  els.duelPills.innerHTML = (boardResult?.games || []).map((g) => `<a class="pill-result ${g.resultClass}" href="${g.url}" target="_blank" rel="noreferrer">${g.short} · ${g.date}</a>`).join('');
+  els.manualA.value = boardResult?.pointsA ?? '';
+  els.manualB.value = boardResult?.pointsB ?? '';
+  els.manualGdA.value = boardResult?.gdA ?? '';
+  els.manualGdB.value = boardResult?.gdB ?? '';
 }
 
-function peakField(cadence) {
-  return `peak_${cadence}`;
+function closeDrawer() {
+  els.boardDrawer.classList.remove('open');
+  els.boardDrawer.setAttribute('aria-hidden', 'true');
 }
 
-function cadenceRating(player, cadence = selectedCadence()) {
-  return player?.[ratingField(cadence)] ?? null;
-}
-
-function cadencePeak(player, cadence = selectedCadence()) {
-  const peakValue = player?.[peakField(cadence)];
-  const currentValue = cadenceRating(player, cadence);
-  return Math.max(Number(peakValue ?? 0), Number(currentValue ?? 0)) || null;
-}
-
-function updatePlayersSortLabels() {
-  const label = CADENCE_LABELS[selectedCadence()];
-  if (!els.playersSort) return;
-  const desc = els.playersSort.querySelector('option[value="rapid_desc"]');
-  const asc = els.playersSort.querySelector('option[value="rapid_asc"]');
-  const peak = els.playersSort.querySelector('option[value="peak_global_desc"]');
-  if (desc) desc.textContent = `ELO ${label} ↓`;
-  if (asc) asc.textContent = `ELO ${label} ↑`;
-  if (peak) peak.textContent = `Peak ${label.toLowerCase()} ↓`;
-}
-
-const setAdminState = (message, isError = false) => {
-  els.authState.textContent = message;
-  els.authState.style.color = isError ? '#ff8a8a' : '';
-  showToast(message, isError);
-};
-
-function showToast(message, isError = false) {
-  if (!els.toast) return;
-  els.toast.textContent = message;
-  els.toast.style.borderColor = isError ? '#ff7d7d88' : '';
-  els.toast.classList.add('show');
-  clearTimeout(showToast.timer);
-  showToast.timer = setTimeout(() => els.toast.classList.remove('show'), 2600);
-}
-
-function applySavedTheme() {
-  const saved = localStorage.getItem('theme') || 'dark';
-  const theme = saved === 'light' ? 'light' : 'dark';
-  document.documentElement.dataset.theme = theme;
-  if (els.themeToggle) {
-    els.themeToggle.textContent = theme === 'light' ? '☀️' : '🌙';
+async function importBoardGames() {
+  if (!state.selectedBoard) return;
+  const { matchId, boardNo } = state.selectedBoard;
+  const match = matchById(matchId);
+  const board = match.boards.find((b) => b.board === boardNo);
+  const playerA = playerById(board.playerA);
+  const playerB = playerById(board.playerB);
+  els.importFeedback.textContent = 'Import en cours…';
+  try {
+    const games = await fetchHeadToHeadGames(playerA.chesscom, playerB.chesscom, els.rangeStart.value, els.rangeEnd.value);
+    const payload = evaluateGames(games, playerA.chesscom);
+    upsertBoardResult(matchId, boardNo, payload, false);
+    els.importFeedback.textContent = `${games.length} parties importées.`;
+    fillBoardDrawerData(matchId, boardNo);
+    persistResults();
+    renderAll();
+  } catch (error) {
+    els.importFeedback.textContent = 'Parties non disponibles — saisie manuelle';
+    toast(`Import impossible: ${error.message}`);
   }
 }
 
-function getSessionRole(session) {
-  return session?.user?.app_metadata?.role || '';
-}
-
-function isAdminSession(session) {
-  return getSessionRole(session) === 'admin';
-}
-
-function updateAdminUI(session) {
-  state.adminSession = session || null;
-  const isAdmin = isAdminSession(session);
-  document.body.classList.toggle('admin-logged', Boolean(session));
-  document.body.classList.toggle('admin-verified', isAdmin);
-  if (els.authState) {
-    if (!session) {
-      els.authState.textContent = 'Non connecté';
-      els.authState.style.color = '';
-    } else if (isAdmin) {
-      els.authState.textContent = `✅ Connecté comme admin (${session.user.email})`;
-      els.authState.style.color = '';
-    } else {
-      els.authState.textContent = `⚠️ Connecté (${session.user.email}) mais sans rôle admin.`;
-      els.authState.style.color = '#ffcd6b';
-    }
-  }
-  if (els.authForm) {
-    const shouldCollapse = Boolean(session) && isAdmin;
-    els.authForm.classList.toggle('collapsed', shouldCollapse);
-  }
-}
-
-async function requireAuthenticatedAdminAction() {
-  const { data, error } = await supabase.auth.getSession();
-  if (error) {
-    setAdminState(`❌ Session invalide: ${error.message}`, true);
-    return false;
-  }
-  if (!data.session) {
-    setAdminState('❌ Connecte-toi en admin avant de modifier les équipes/joueurs.', true);
-    return false;
-  }
-  if (!isAdminSession(data.session)) {
-    setAdminState('⚠️ Compte connecté sans claim admin: accès en mode éditeur authentifié.');
-  }
-  return true;
-}
-
-function computeFallbackStandings(teams, matches) {
-  const doneMatches = (matches || []).filter((m) => m.phase === 'group' && ['finished', 'validated'].includes(m.status));
-  const byPool = new Map();
-  for (const team of teams || []) {
-    const pool = team.pool || '—';
-    if (!byPool.has(pool)) byPool.set(pool, []);
-    byPool.get(pool).push({ pool, team_id: team.id, team_name: team.name, points: 0, goal_diff: 0 });
-  }
-  for (const match of doneMatches) {
-    const teamA = [...byPool.values()].flat().find((t) => t.team_id === match.team_a_id);
-    const teamB = [...byPool.values()].flat().find((t) => t.team_id === match.team_b_id);
-    if (!teamA || !teamB) continue;
-    const scoreA = Number(match.score_a ?? 0);
-    const scoreB = Number(match.score_b ?? 0);
-    if (scoreA > scoreB) teamA.points += 3;
-    else if (scoreB > scoreA) teamB.points += 3;
-    else {
-      teamA.points += 1;
-      teamB.points += 1;
-    }
-    teamA.goal_diff += Number(match.goal_diff_a ?? 0);
-    teamB.goal_diff += Number(match.goal_diff_b ?? 0);
-  }
-  return [...byPool.entries()]
-    .flatMap(([pool, rows]) =>
-      rows
-        .sort((a, b) => b.points - a.points || b.goal_diff - a.goal_diff || a.team_name.localeCompare(b.team_name))
-        .map((row, index) => ({ ...row, pool, rank_in_pool: index + 1 })),
-    );
-}
-
-function computeFallbackTeamStrength(teams, players) {
-  return (teams || []).map((team) => {
-    const roster = (players || []).filter((player) => player.team_id === team.id);
-    const sumPeakGlobal = roster.reduce((sum, p) => sum + Number(p.peak_global ?? p.peak_rapid ?? p.rapid_rating ?? 0), 0);
-    const avgPeakRapid = roster.reduce((sum, p) => sum + Number(p.peak_rapid ?? p.rapid_rating ?? 0), 0) / Math.max(roster.length, 1);
+function evaluateGames(games, playerAUsername) {
+  let winsA = 0;
+  let winsB = 0;
+  let draws = 0;
+  const mapped = games.map((g) => {
+    const asWhite = g.white.username.toLowerCase() === playerAUsername.toLowerCase();
+    const aResult = asWhite ? g.white.result : g.black.result;
+    const bResult = asWhite ? g.black.result : g.white.result;
+    const normalized = outcomeFromResultStrings(aResult, bResult);
+    if (normalized === 'W') winsA += 1;
+    if (normalized === 'L') winsB += 1;
+    if (normalized === 'D') draws += 1;
     return {
-      team_id: team.id,
-      team_name: team.name,
-      avg_peak_rapid: avgPeakRapid,
-      sum_peak_global: sumPeakGlobal,
-      strength_score: sumPeakGlobal,
+      date: new Date(g.end_time * 1000).toLocaleDateString('fr-FR'),
+      timeControl: g.time_control,
+      url: g.url,
+      short: normalized,
+      resultClass: normalized.toLowerCase(),
     };
   });
+  const winner = winsA > winsB ? 'A' : winsB > winsA ? 'B' : 'draw';
+  return { games: mapped, winsA, winsB, draws, winner };
 }
 
-function splitPoolsForDisplay(standings) {
-  const grouped = new Map();
-  for (const row of standings || []) {
-    const pool = row.pool || '—';
-    if (!grouped.has(pool)) grouped.set(pool, []);
-    grouped.get(pool).push(row);
+function outcomeFromResultStrings(aResult, bResult) {
+  const winningMarkers = new Set(['win']);
+  if (winningMarkers.has(aResult)) return 'W';
+  if (winningMarkers.has(bResult)) return 'L';
+  return 'D';
+}
+
+function upsertBoardResult(matchId, boardNo, payload, manual = false) {
+  if (!state.results.matches[matchId]) state.results.matches[matchId] = { boards: {} };
+  if (!state.results.matches[matchId].boards) state.results.matches[matchId].boards = {};
+  const boardWeight = boardNo === 1 ? 2 : 1;
+  let pointsA = 0;
+  let pointsB = 0;
+  if (payload.winner === 'A') pointsA = boardWeight;
+  else if (payload.winner === 'B') pointsB = boardWeight;
+  else {
+    pointsA = 0.5;
+    pointsB = 0.5;
   }
-  return grouped;
+  state.results.matches[matchId].boards[boardNo] = {
+    ...payload,
+    pointsA,
+    pointsB,
+    gdA: payload.winsA - payload.winsB,
+    gdB: payload.winsB - payload.winsA,
+    manual,
+    updatedAt: new Date().toISOString(),
+  };
 }
 
-function matchStatusCategory(match) {
-  const status = (match?.status || '').toLowerCase();
-  if (status === 'live' || status === 'playing') return 'live';
-  if (status === 'finished' || status === 'validated') return 'completed';
+function validateBoard() {
+  toast('Board validé.');
+  persistResults();
+  renderAll();
+}
+
+function applyManualOverride() {
+  if (!state.selectedBoard) return;
+  const { matchId, boardNo } = state.selectedBoard;
+  const oldValue = state.results.matches?.[matchId]?.boards?.[boardNo] || null;
+  const payload = {
+    games: oldValue?.games || [],
+    winsA: Number(oldValue?.winsA || 0),
+    winsB: Number(oldValue?.winsB || 0),
+    draws: Number(oldValue?.draws || 0),
+    winner: Number(els.manualA.value) > Number(els.manualB.value) ? 'A' : Number(els.manualB.value) > Number(els.manualA.value) ? 'B' : 'draw',
+    pointsA: Number(els.manualA.value || 0),
+    pointsB: Number(els.manualB.value || 0),
+    gdA: Number(els.manualGdA.value || 0),
+    gdB: Number(els.manualGdB.value || 0),
+    manual: true,
+    updatedAt: new Date().toISOString(),
+  };
+  if (!state.results.matches[matchId]) state.results.matches[matchId] = { boards: {} };
+  state.results.matches[matchId].boards[boardNo] = payload;
+  logOverride({ matchId, boardNo, oldValue, newValue: payload, admin: 'local-admin' });
+  persistResults();
+  fillBoardDrawerData(matchId, boardNo);
+  renderAll();
+  toast('Override appliqué.');
+}
+
+function logOverride(entry) {
+  state.results.overrideLog.unshift({ timestamp: new Date().toISOString(), ...entry });
+  state.results.overrideLog = state.results.overrideLog.slice(0, 200);
+  localStorage.setItem(STORAGE_LOG_KEY, JSON.stringify(state.results.overrideLog));
+}
+
+function renderOverrideLog() {
+  if (!state.adminUnlocked) return;
+  const logs = state.results.overrideLog || [];
+  els.overrideLog.innerHTML = logs.length
+    ? logs.map((log) => `<article class="match-card"><strong>${new Date(log.timestamp).toLocaleString('fr-FR')}</strong><p>Match ${log.matchId} · Board ${log.boardNo} · ${log.admin}</p><p class="muted">${JSON.stringify(log.oldValue)} → ${JSON.stringify(log.newValue)}</p></article>`).join('')
+    : '<p class="muted">Aucun override enregistré.</p>';
+}
+
+function computeMatchScore(matchId) {
+  const boards = state.results.matches?.[matchId]?.boards || {};
+  const values = Object.values(boards);
+  const pointsA = values.reduce((sum, b) => sum + Number(b.pointsA || 0), 0);
+  const pointsB = values.reduce((sum, b) => sum + Number(b.pointsB || 0), 0);
+  const gdA = values.reduce((sum, b) => sum + Number(b.gdA || 0), 0);
+  const gdB = values.reduce((sum, b) => sum + Number(b.gdB || 0), 0);
+  return { pointsA, pointsB, gdA, gdB, played: values.length > 0 };
+}
+
+function matchStatus(match) {
+  const now = new Date();
+  const start = new Date(match.kickoff);
+  const end = new Date(match.end);
+  const hasData = computeMatchScore(match.id).played;
+  if (now >= start && now <= end) return 'live';
+  if (hasData || now > end) return 'completed';
   return 'upcoming';
 }
 
-function matchStatusLabel(match) {
-  const category = matchStatusCategory(match);
-  if (category === 'live') return 'En cours';
-  if (category === 'completed') return 'Terminé';
-  return 'À venir';
+function isLiveWindow(now) {
+  const day = now.getUTCDay();
+  const hour = now.getUTCHours();
+  return (day === 6 || day === 0) && hour >= 19 && hour < 22;
 }
 
-function formatMatchDate(dateValue) {
-  if (!dateValue) return 'Date à confirmer';
-  return new Date(dateValue).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
+function startConditionalPolling() {
+  if (!isLiveWindow(new Date())) return;
+  state.pollingTimer = setInterval(async () => {
+    if (!state.selectedBoard) return;
+    await importBoardGames();
+  }, 60000);
 }
 
-function findNextFeaturedMatch(matches) {
-  const now = Date.now();
-  const sorted = [...(matches || [])].sort((a, b) => new Date(a.scheduled_at || 0).getTime() - new Date(b.scheduled_at || 0).getTime());
-  const live = sorted.find((match) => matchStatusCategory(match) === 'live');
-  if (live) return live;
-  const upcoming = sorted.find((match) => {
-    const timestamp = new Date(match.scheduled_at || 0).getTime();
-    return timestamp >= now && matchStatusCategory(match) === 'upcoming';
+async function fetchHeadToHeadGames(playerA, playerB, startDate, endDate) {
+  const archives = await getArchivesCached(playerA);
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const months = archives
+    .map((url) => {
+      const parts = url.split('/').slice(-2);
+      return { url, year: Number(parts[0]), month: Number(parts[1]) };
+    })
+    .filter((m) => {
+      const first = new Date(Date.UTC(m.year, m.month - 1, 1));
+      const last = new Date(Date.UTC(m.year, m.month, 0));
+      return last >= start && first <= end;
+    });
+
+  const monthlyGames = await Promise.all(months.map((m) => fetchJSON(m.url)));
+  const allGames = monthlyGames.flatMap((m) => m.games || []);
+  const filtered = allGames.filter((g) => {
+    const white = g.white.username.toLowerCase();
+    const black = g.black.username.toLowerCase();
+    const isOpposition = (white === playerA.toLowerCase() && black === playerB.toLowerCase()) || (white === playerB.toLowerCase() && black === playerA.toLowerCase());
+    const date = new Date(g.end_time * 1000);
+    return isOpposition && date >= start && date <= end;
   });
-  if (upcoming) return upcoming;
-  return sorted.find((match) => matchStatusCategory(match) === 'completed') || null;
+  filtered.sort((a, b) => b.end_time - a.end_time);
+  return filtered.slice(0, 4);
 }
 
-function renderHeroAndSummary(standings, matches, teams) {
-  const totalTeams = teams?.length || 0;
-  const pools = new Set((teams || []).map((team) => team.pool).filter(Boolean));
-  const boards = 4;
-  const featured = findNextFeaturedMatch(matches);
-  const featuredTeams = featured ? `${featured.team_a?.name || '?'} vs ${featured.team_b?.name || '?'}` : 'Match à confirmer';
-  const featuredDate = featured ? formatMatchDate(featured.scheduled_at) : 'Planning en cours';
-  const hasLive = (matches || []).some((match) => matchStatusCategory(match) === 'live');
-  const hasUpcoming = (matches || []).some((match) => matchStatusCategory(match) === 'upcoming');
-  const status = hasLive ? 'live' : hasUpcoming ? 'scheduled' : 'finished';
-  const leadersByPool = new Map();
-  for (const row of standings || []) {
-    if (!leadersByPool.has(row.pool) || Number(row.rank_in_pool) === 1) leadersByPool.set(row.pool, row);
-  }
-  const leaderA = leadersByPool.get('A');
-  const leaderB = leadersByPool.get('B');
-
-  if (els.heroStatus) {
-    els.heroStatus.className = `status-badge status-${status}`;
-    els.heroStatus.textContent = status === 'live' ? 'LIVE' : status === 'scheduled' ? 'UPCOMING' : 'FINISHED';
-  }
-  if (els.heroFormatSummary) {
-    els.heroFormatSummary.textContent = `Format: ${totalTeams} équipes · ${Math.max(pools.size, 2)} poules · ${boards} boards par match.`;
-  }
-  if (els.heroNextMatch) {
-    els.heroNextMatch.classList.remove('skeleton');
-    els.heroNextMatch.innerHTML = `<article class="match-feature-card">
-      <h4>Match en lumière</h4>
-      <p class="teams">${featuredTeams}</p>
-      <p class="muted">${featuredDate} · ${featured ? matchStatusLabel(featured) : 'En attente'}</p>
-    </article>`;
-  }
-  if (els.heroNextTimer) {
-    els.heroNextTimer.textContent = featured ? formatMatchDate(featured.scheduled_at) : 'À confirmer';
-  }
-  if (els.summaryDashboard) {
-    els.summaryDashboard.classList.remove('skeleton');
-    els.summaryDashboard.innerHTML = `
-      <article class="stat-tile"><p class="stat-label">Leader Pool A</p><p class="stat-value">${leaderA?.team_name || 'TBD'}</p><p class="stat-context">${leaderA ? `${leaderA.points} pts · diff ${leaderA.goal_diff}` : 'Aucun score'}</p></article>
-      <article class="stat-tile"><p class="stat-label">Leader Pool B</p><p class="stat-value">${leaderB?.team_name || 'TBD'}</p><p class="stat-context">${leaderB ? `${leaderB.points} pts · diff ${leaderB.goal_diff}` : 'Aucun score'}</p></article>
-      <article class="stat-tile"><p class="stat-label">Prochain match</p><p class="stat-value">${featuredTeams}</p><p class="stat-context">${featuredDate}</p></article>
-      <article class="stat-tile"><p class="stat-label">Champion en titre</p><p class="stat-value">yoann565</p><p class="stat-context">Référence de la saison précédente</p></article>
-    `;
-  }
-  if (els.featuredMatch) {
-    els.featuredMatch.classList.remove('skeleton');
-    els.featuredMatch.innerHTML = `<article class="match-feature-card">
-      <h4>Featured Match</h4>
-      <p class="teams">${featuredTeams}</p>
-      <p class="muted">${featuredDate} · ${featured ? matchStatusLabel(featured) : 'À venir'}</p>
-    </article>`;
-  }
+async function getArchivesCached(username) {
+  const cache = readJSON(STORAGE_ARCHIVE_KEY) || {};
+  const key = username.toLowerCase();
+  const recent = cache[key];
+  const ttlMs = 6 * 60 * 60 * 1000;
+  if (recent && Date.now() - recent.savedAt < ttlMs) return recent.archives;
+  const response = await fetchJSON(`https://api.chess.com/pub/player/${username}/games/archives`);
+  if (!response?.archives) throw new Error('archives indisponibles');
+  cache[key] = { savedAt: Date.now(), archives: response.archives };
+  localStorage.setItem(STORAGE_ARCHIVE_KEY, JSON.stringify(cache));
+  return response.archives;
 }
 
-function renderMatchesByFilter(matches) {
-  const filter = state.matchFilter || 'all';
-  const visibleMatches = (matches || []).filter((match) => (filter === 'all' ? true : matchStatusCategory(match) === filter));
-  els.matches.classList.remove('skeleton');
-  els.matches.innerHTML = !visibleMatches.length
-    ? '<div class="empty-state"><p class="empty-icon">♟️</p><p>Aucun match dans ce filtre.</p></div>'
-    : `<table><thead><tr><th>Date</th><th>Phase</th><th>Match</th><th>Score</th><th>Statut</th></tr></thead><tbody>${visibleMatches
-      .map((m) => `<tr><td>${formatMatchDate(m.scheduled_at)}</td><td>${m.phase}</td><td>${m.team_a?.name || '?'} vs ${m.team_b?.name || '?'}</td><td>${m.score_a ?? '-'} - ${m.score_b ?? '-'}</td><td><span class="status-pill status-${matchStatusCategory(m)}">${matchStatusLabel(m)}</span></td></tr>`)
-      .join('')}</tbody></table>`;
+async function fetchJSON(url) {
+  const response = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (response.status === 403 || response.status === 404) throw new Error('compte indisponible');
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
 }
 
-function attachDnDHandlers(container) {
-  if (!container) return;
-  for (const playerEl of container.querySelectorAll('[data-player-id]')) {
-    playerEl.addEventListener('dragstart', (event) => {
-      playerEl.classList.add('dragging');
-      event.dataTransfer?.setData('text/player-id', playerEl.dataset.playerId);
-      event.dataTransfer.effectAllowed = 'move';
-    });
-    playerEl.addEventListener('dragend', () => playerEl.classList.remove('dragging'));
-  }
-  for (const zone of container.querySelectorAll('[data-team-drop]')) {
-    zone.addEventListener('dragover', (event) => {
-      event.preventDefault();
-      zone.classList.add('drag-over');
-    });
-    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
-    zone.addEventListener('drop', async (event) => {
-      event.preventDefault();
-      zone.classList.remove('drag-over');
-      const playerId = Number(event.dataTransfer?.getData('text/player-id'));
-      const target = zone.dataset.teamDrop;
-      if (!playerId || !target) return;
-      const teamId = target === 'substitutes' ? null : Number(target);
-      if (!(await requireAuthenticatedAdminAction())) return;
-      const { error } = await supabase.from('players').update({ team_id: teamId }).eq('id', playerId);
-      if (error) {
-        setAdminState(`❌ Transfert impossible: ${error.message}`, true);
-        return;
-      }
-      showToast('✅ Joueur transféré');
-      await loadPublic();
-    });
-  }
+function exportResultsJSON() {
+  const blob = new Blob([JSON.stringify(state.results, null, 2)], { type: 'application/json' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'results.export.json';
+  link.click();
+  URL.revokeObjectURL(link.href);
 }
 
-async function loadPublic() {
-  const [{ data: standingsData, error: standingsError }, { data: matches, error: matchesError }, { data: teamsData, error: teamsError }, { data: players, error: playersError }, { data: rawTeams, error: rawTeamsError }] = await Promise.all([
-    supabase.from('standings').select('*').order('pool').order('rank_in_pool'),
-    supabase.from('matches').select('*,team_a:teams!matches_team_a_id_fkey(name),team_b:teams!matches_team_b_id_fkey(name)').order('scheduled_at'),
-    supabase.from('team_strength').select('*').order('strength_score', { ascending: false }),
-    supabase.from('players').select('id,display_name,chess_username,is_captain,team_id,rapid_rating,blitz_rating,bullet_rating,peak_rapid,peak_blitz,peak_bullet,peak_global,avatar_url,chess_title,country_code,teams(name)').order('display_name'),
-    supabase.from('teams').select('id,name,pool').order('name'),
-  ]);
-  const firstError = matchesError || playersError || rawTeamsError;
-  if (firstError) {
-    setAdminState(`❌ Chargement impossible: ${firstError.message}`, true);
-    return;
-  }
-  if (standingsError) showToast(`⚠️ Classement via vue indisponible (${standingsError.message}) → mode secours actif.`, true);
-  if (teamsError) showToast(`⚠️ Force équipe via vue indisponible (${teamsError.message}) → mode secours actif.`, true);
-
-  const standings = standingsError ? computeFallbackStandings(rawTeams || [], matches || []) : standingsData || [];
-  const teamsBase = teamsError ? computeFallbackTeamStrength(rawTeams || [], players || []) : teamsData || [];
-  const poolByTeamId = new Map((rawTeams || []).map((team) => [team.id, team.pool]));
-  const teams = teamsBase.map((team) => ({
-    ...team,
-    pool: team.pool || poolByTeamId.get(team.team_id) || '—',
-  }));
-  renderHeroAndSummary(standings, matches || [], rawTeams || []);
-
-  els.standings.classList.remove('skeleton');
-  if (!standings?.length) {
-    els.standings.innerHTML = '<p class="muted">Aucun classement disponible pour le moment.</p>';
-  } else {
-    const grouped = splitPoolsForDisplay(standings);
-    const preferredPools = ['A', 'B'];
-    const orderedPools = [...preferredPools.filter((pool) => grouped.has(pool)), ...[...grouped.keys()].filter((pool) => !preferredPools.includes(pool))];
-    els.standings.innerHTML = `<div class="standings-split">${orderedPools
-      .map((pool) => {
-        const rows = grouped.get(pool) || [];
-        return `<section class="standings-pool">
-          <h3>Poule ${pool}</h3>
-          <table><thead><tr><th>Rang</th><th>Équipe</th><th>Pts</th><th>Diff</th></tr></thead><tbody>${rows
-            .map((r) => `<tr><td>${r.rank_in_pool}</td><td>${r.team_name}</td><td>${r.points}</td><td>${r.goal_diff}</td></tr>`)
-            .join('')}</tbody></table>
-        </section>`;
-      })
-      .join('')}</div>`;
-  }
-
-  renderMatchesByFilter(matches || []);
-
-  const semis = (matches || []).filter((m) => m.phase === 'semi');
-  const final = (matches || []).find((m) => m.phase === 'final');
-  els.bracket.classList.remove('skeleton');
-  els.bracket.innerHTML = `<p>🏁 Demi 1: ${semis[0]?.team_a?.name || '?'} vs ${semis[0]?.team_b?.name || '?'}</p>
-  <p>🏁 Demi 2: ${semis[1]?.team_a?.name || '?'} vs ${semis[1]?.team_b?.name || '?'}</p>
-  <p>🏆 Finale: ${final?.team_a?.name || '?'} vs ${final?.team_b?.name || '?'}</p>`;
-
-  state.teams = teams || [];
-  state.players = players || [];
-  state.matches = matches || [];
-  renderPlayersTable();
-  enrichVisiblePlayersData(state.players);
-
-  const teamFilterOptions = [`<option value="">Toutes les équipes</option>`, ...teams.map((t) => `<option value="${t.team_id}">${t.team_name}</option>`)];
-  els.playersTeamFilter.innerHTML = teamFilterOptions.join('');
-  const options = [`<option value="">Pool joueurs disponibles (sans équipe)</option>`, ...teams.map((t) => `<option value="${t.team_id}">${t.team_name}</option>`)].join('');
-  els.playerTeam.innerHTML = options;
-  const matchOptions = (matches || []).map((m) => `<option value="${m.id}">${m.phase} - ${m.team_a?.name || '?'} vs ${m.team_b?.name || '?'}</option>`).join('');
-  els.windowMatch.innerHTML = matchOptions;
-  els.overrideMatch.innerHTML = matchOptions;
-  renderTeamDnD(teams || [], players || []);
-  renderAdminRosters(teams || [], players || []);
-  renderSwapRecommendations(teams || [], players || []);
-  renderTeamShowcase(teams || [], players || []);
+function persistResults() {
+  localStorage.setItem(STORAGE_RESULTS_KEY, JSON.stringify({ matches: state.results.matches }));
 }
 
-function initials(name) {
-  const parts = (name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2);
-  return parts.length ? parts.map((part) => part[0]).join('').toUpperCase() : '♟️';
-}
-
-function avatarHTML(player, sizeClass = '') {
-  if (player?.avatar_url) {
-    return `<img class="avatar ${sizeClass}" src="${player.avatar_url}" alt="Photo de ${player.display_name}" loading="lazy" />`;
-  }
-  return `<span class="avatar fallback ${sizeClass}" aria-hidden="true">${initials(player?.display_name || '')}</span>`;
-}
-
-function effectivePeakGlobal(player) {
-  return Math.max(
-    Number(player?.peak_global ?? 0),
-    Number(player.peak_rapid ?? player.rapid_rating ?? 0),
-    Number(player.peak_blitz ?? player.blitz_rating ?? 0),
-    Number(player.peak_bullet ?? player.bullet_rating ?? 0),
-  );
-}
-
-function effectivePeakRapid(player) {
-  return Math.max(Number(player?.peak_rapid ?? 0), Number(player?.rapid_rating ?? 0));
-}
-
-function shouldRefreshPlayerStats(player) {
-  return (
-    !player?.avatar_url
-    || player?.rapid_rating == null
-    || player?.blitz_rating == null
-    || player?.bullet_rating == null
-    || player?.peak_rapid == null
-    || player?.peak_blitz == null
-    || player?.peak_bullet == null
-    || Number(player?.peak_global ?? 0) < Math.max(
-      Number(player?.rapid_rating ?? 0),
-      Number(player?.blitz_rating ?? 0),
-      Number(player?.bullet_rating ?? 0),
-    )
-    || Number(player?.peak_rapid ?? 0) < Number(player?.rapid_rating ?? 0)
-    || Number(player?.peak_blitz ?? 0) < Number(player?.blitz_rating ?? 0)
-    || Number(player?.peak_bullet ?? 0) < Number(player?.bullet_rating ?? 0)
-  );
-}
-
-function sanitizeChessUsername(rawValue) {
-  return String(rawValue || '').trim().toLowerCase();
-}
-
-async function fetchChessProfile(rawUsername) {
-  const normalized = sanitizeChessUsername(rawUsername);
-  if (!normalized) return null;
-  if (state.chessCache.has(normalized)) return state.chessCache.get(normalized);
-  if (state.pendingCache.has(normalized)) return null;
-  state.pendingCache.add(normalized);
-
+function readJSON(key) {
   try {
-    const rawTrimmed = String(rawUsername || '').trim();
-    const usernamesToTry = [...new Set([rawTrimmed, normalized])].filter(Boolean);
-    let profile = {};
-    let stats = {};
-    let successfulUsername = normalized;
-
-    for (const candidate of usernamesToTry) {
-      const encoded = encodeURIComponent(candidate);
-      const [profileRes, statsRes] = await Promise.all([
-        fetch(`https://api.chess.com/pub/player/${encoded}`),
-        fetch(`https://api.chess.com/pub/player/${encoded}/stats`),
-      ]);
-      if (!profileRes.ok && !statsRes.ok) continue;
-      profile = profileRes.ok ? await profileRes.json() : {};
-      stats = statsRes.ok ? await statsRes.json() : {};
-      successfulUsername = sanitizeChessUsername(profile?.username || candidate);
-      break;
-    }
-
-    const canonicalUsername = sanitizeChessUsername(profile?.username || successfulUsername || normalized);
-    const rapid = stats?.chess_rapid?.last?.rating ?? null;
-    const blitz = stats?.chess_blitz?.last?.rating ?? null;
-    const bullet = stats?.chess_bullet?.last?.rating ?? null;
-    const peakRapid = stats?.chess_rapid?.best?.rating ?? rapid;
-    const peakBlitz = stats?.chess_blitz?.best?.rating ?? blitz;
-    const peakBullet = stats?.chess_bullet?.best?.rating ?? bullet;
-
-    const data = {
-      canonical_username: canonicalUsername,
-      avatar_url: profile?.avatar ?? null,
-      country_code: typeof profile?.country === 'string' ? profile.country.split('/').pop() ?? null : null,
-      chess_title: profile?.title ?? null,
-      rapid_rating: rapid,
-      blitz_rating: blitz,
-      bullet_rating: bullet,
-      peak_rapid: peakRapid,
-      peak_blitz: peakBlitz,
-      peak_bullet: peakBullet,
-      peak_global: Math.max(Number(peakRapid || 0), Number(peakBlitz || 0), Number(peakBullet || 0)) || null,
-    };
-
-    state.chessCache.set(normalized, data);
-    if (canonicalUsername) state.chessCache.set(canonicalUsername, data);
-    state.pendingCache.delete(normalized);
-    return data;
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
   } catch {
-    state.pendingCache.delete(normalized);
     return null;
   }
 }
 
-async function verifyChessComUsernameExists(username) {
-  const normalized = sanitizeChessUsername(username);
-  if (!normalized) return { ok: false, message: 'Le user_name Chess.com ne peut pas être vide.' };
-
-  try {
-    const rawTrimmed = String(username || '').trim();
-    const usernamesToTry = [...new Set([rawTrimmed, normalized])].filter(Boolean);
-    let response = null;
-    for (const candidate of usernamesToTry) {
-      const candidateRes = await fetch(`https://api.chess.com/pub/player/${encodeURIComponent(candidate)}`);
-      if (candidateRes.ok) {
-        response = candidateRes;
-        break;
-      }
-      if (candidateRes.status !== 404) {
-        response = candidateRes;
-        break;
-      }
-    }
-    if (!response || response.status === 404) {
-      return { ok: false, message: `Aucun profil Chess.com trouvé pour "${rawTrimmed || normalized}".` };
-    }
-    if (!response.ok) {
-      return { ok: false, message: `Chess.com a répondu ${response.status}. Réessaie plus tard.` };
-    }
-    const profile = await response.json();
-    const canonical = sanitizeChessUsername(profile?.username || normalized);
-    return { ok: true, username: canonical };
-  } catch (error) {
-    return { ok: false, message: `Vérification Chess.com impossible: ${error.message}` };
-  }
+function teamById(id) { return state.tournament.teams.find((t) => t.id === id); }
+function playersByTeam(teamId) { return state.tournament.players.filter((p) => p.teamId === teamId); }
+function playerById(id) { return state.tournament.players.find((p) => p.id === id); }
+function matchById(id) { return state.tournament.matches.find((m) => m.id === id); }
+function initials(name) { return name?.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(); }
+function avatarHTML(name) { return `<span class="avatar-ring"><span>${initials(name)}</span></span>`; }
+function toast(message) {
+  els.toast.textContent = message;
+  els.toast.classList.add('show');
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => els.toast.classList.remove('show'), 2400);
 }
-
-async function enrichVisiblePlayersData(players) {
-  const missing = (players || []).filter((player) => player.chess_username && shouldRefreshPlayerStats(player));
-  if (!missing.length) return;
-  const batchSize = 8;
-  for (let index = 0; index < missing.length; index += batchSize) {
-    const batch = missing.slice(index, index + batchSize);
-    await Promise.allSettled(
-      batch.map(async (player) => {
-        const merged = await fetchChessProfile(player.chess_username);
-        if (!merged) return;
-        if (merged.avatar_url) player.avatar_url = merged.avatar_url;
-        if (merged.country_code) player.country_code = merged.country_code;
-        if (merged.chess_title) player.chess_title = merged.chess_title;
-        if (merged.rapid_rating != null) player.rapid_rating = merged.rapid_rating;
-        if (merged.blitz_rating != null) player.blitz_rating = merged.blitz_rating;
-        if (merged.bullet_rating != null) player.bullet_rating = merged.bullet_rating;
-        if (merged.peak_rapid != null) player.peak_rapid = merged.peak_rapid;
-        if (merged.peak_blitz != null) player.peak_blitz = merged.peak_blitz;
-        if (merged.peak_bullet != null) player.peak_bullet = merged.peak_bullet;
-        player.peak_global = effectivePeakGlobal(player);
-      }),
-    );
-  }
-  renderPlayersTable();
-  renderTeamShowcase(state.teams, state.players);
-  renderTeamDnD(state.teams, state.players);
-}
-
-function renderTeamShowcase(teams, players) {
-  if (!els.teamShowcase) return;
-  els.teamShowcase.classList.remove('skeleton');
-  if (!teams.length) {
-    els.teamShowcase.innerHTML = '<p class="muted">Aucune équipe à afficher pour le moment.</p>';
-    return;
-  }
-  const cadence = selectedCadence();
-  const cadenceLabel = CADENCE_LABELS[cadence];
-  const rosterByTeam = new Map(teams.map((team) => [team.team_id, players.filter((p) => p.team_id === team.team_id)]));
-  const strengthByTeam = new Map(
-    teams.map((team) => {
-      const roster = rosterByTeam.get(team.team_id) || [];
-      const strength = roster.reduce((sum, player) => sum + Number(cadencePeak(player, cadence) || 0), 0);
-      return [team.team_id, strength];
-    }),
-  );
-  const avgStrength = [...strengthByTeam.values()].reduce((sum, value) => sum + value, 0) / Math.max(strengthByTeam.size, 1);
-  const maxStrength = Math.max(...strengthByTeam.values(), 1);
-  const teamCards = teams.map((team) => {
-    const roster = [...(rosterByTeam.get(team.team_id) || [])].sort((a, b) => Number(cadencePeak(b, cadence) || 0) - Number(cadencePeak(a, cadence) || 0));
-    const teamStrength = strengthByTeam.get(team.team_id) || 0;
-    const captain = roster.find((p) => p.is_captain) || roster[0] || null;
-    const avgCadence = roster.reduce((sum, p) => sum + Number(cadenceRating(p, cadence) || 0), 0) / Math.max(roster.length, 1);
-    return `<article class="showcase-card drop-zone" data-team-drop="${team.team_id}">
-      <div class="showcase-head">
-        ${captain ? avatarHTML(captain) : '<span class="avatar fallback" aria-hidden="true">♟️</span>'}
-        <div>
-          <h3>${team.team_name}</h3>
-          <p class="muted">Poule ${team.pool || '—'} · Capitaine: ${captain?.display_name || 'Non défini'}</p>
-        </div>
-      </div>
-      <div class="showcase-stats">
-        <div class="stat-row"><span>Force équipe (${cadenceLabel})</span><b>${Math.round(teamStrength)} ELO</b></div>
-        <div class="strength-bar"><div class="strength-bar-fill" style="width:${Math.min(100, (teamStrength / maxStrength) * 100)}%"></div></div>
-        <div class="stat-row"><span>Moyenne ${cadenceLabel.toLowerCase()}</span><b>${Math.round(avgCadence || 0)}</b></div>
-        <div class="stat-row"><span>Total peak ${cadenceLabel.toLowerCase()}</span><b>${Math.round(roster.reduce((sum, p) => sum + Number(cadencePeak(p, cadence) || 0), 0))}</b></div>
-        <div class="stat-row"><span>Écart vs moyenne</span><b>${(teamStrength - avgStrength).toFixed(1)}</b></div>
-      </div>
-      <p class="muted showcase-all-players">Tous les joueurs (${roster.length})</p>
-      <div class="showcase-roster">${roster
-        .map(
-          (player) => `<article class="dnd-player" draggable="true" data-player-id="${player.id}">
-            <div class="dnd-player-head">${avatarHTML(player, 'small')} <span>${player.display_name}${player.is_captain ? ' 👑' : ''}</span><span class="drag-grip" aria-hidden="true">⋮⋮</span></div>
-            <small>${player.chess_username} · ${cadenceLabel} ${cadenceRating(player, cadence) ?? '-'} · Peak ${cadenceLabel} ${cadencePeak(player, cadence) ?? '-'}</small>
-          </article>`,
-        )
-        .join('') || '<p class="muted">Aucun joueur dans cette équipe.</p>'}</div>
-    </article>`;
-  });
-  const substitutes = players.filter((player) => !player.team_id).sort((a, b) => Number(cadencePeak(b, cadence) || 0) - Number(cadencePeak(a, cadence) || 0));
-  const substituteCard = `<article class="showcase-card drop-zone substitutes-zone" data-team-drop="substitutes">
-    <div class="showcase-head">
-      <span class="avatar fallback" aria-hidden="true">🧩</span>
-      <div><h3>Joueurs disponibles</h3><p class="muted">Sans équipe assignée</p></div>
-    </div>
-    <p class="muted showcase-all-players">Pool de remplacement (${substitutes.length})</p>
-    <div class="showcase-roster">${substitutes
-      .map(
-        (player) => `<article class="dnd-player" draggable="true" data-player-id="${player.id}">
-          <div class="dnd-player-head">${avatarHTML(player, 'small')} <span>${player.display_name}</span><span class="drag-grip" aria-hidden="true">⋮⋮</span></div>
-          <small>${player.chess_username} · ${cadenceLabel} ${cadenceRating(player, cadence) ?? '-'} · Peak ${cadenceLabel} ${cadencePeak(player, cadence) ?? '-'}</small>
-        </article>`,
-      )
-      .join('') || '<p class="muted">Aucun joueur disponible.</p>'}</div>
-  </article>`;
-  els.teamShowcase.innerHTML = [...teamCards, substituteCard].join('');
-  attachDnDHandlers(els.teamShowcase);
-}
-
-function renderTeamDnD(teams, players) {
-  if (!els.teamDnd) return;
-  const cadence = selectedCadence();
-  const cadenceLabel = CADENCE_LABELS[cadence];
-  const teamBlocks = [
-    ...teams.map((team) => ({
-      id: String(team.team_id),
-      label: team.team_name,
-      players: players.filter((player) => player.team_id === team.team_id).sort((a, b) => Number(cadencePeak(b, cadence) || 0) - Number(cadencePeak(a, cadence) || 0)),
-    })),
-    { id: 'substitutes', label: 'Substituts (sans équipe)', players: players.filter((player) => !player.team_id).sort((a, b) => Number(cadencePeak(b, cadence) || 0) - Number(cadencePeak(a, cadence) || 0)) },
-  ];
-  els.teamDnd.innerHTML = teamBlocks
-    .map(
-      (block) => `<section class="drop-zone ${block.id === 'substitutes' ? 'substitutes-zone' : ''}" data-team-drop="${block.id}">
-        <h4>${block.label}</h4>
-        <p class="drop-zone-meta">${block.players.length} joueur(s) · Peak ${cadenceLabel} total ${Math.round(block.players.reduce((sum, p) => sum + Number(cadencePeak(p, cadence) || 0), 0))}</p>
-        ${block.players
-          .map(
-            (player) => `<article class="dnd-player" draggable="true" data-player-id="${player.id}">
-              <div class="dnd-player-head">${avatarHTML(player, 'small')} <span>${player.display_name} ${player.is_captain ? '👑' : ''}</span><span class="drag-grip" aria-hidden="true">⋮⋮</span></div>
-              <small>${player.chess_username} · ${cadenceLabel} ${cadenceRating(player, cadence) ?? '-'} · Peak ${cadenceLabel} ${cadencePeak(player, cadence) ?? '-'}</small>
-            </article>`,
-          )
-          .join('')}
-      </section>`,
-    )
-    .join('');
-
-  attachDnDHandlers(els.teamDnd);
-}
-
-function renderPlayersTable() {
-  const cadence = selectedCadence();
-  const cadenceLabel = CADENCE_LABELS[cadence];
-  const selectedTeam = Number(els.playersTeamFilter?.value || 0);
-  const sortKey = els.playersSort?.value || 'name_asc';
-  const search = (els.playersSearch?.value || '').trim().toLowerCase();
-  const filtered = [...state.players].filter((player) => {
-    if (selectedTeam && player.team_id !== selectedTeam) return false;
-    if (!search) return true;
-    return player.display_name.toLowerCase().includes(search) || player.chess_username.toLowerCase().includes(search);
-  });
-  filtered.sort((a, b) => {
-    if (sortKey === 'team_asc') {
-      return (a.teams?.name || '').localeCompare(b.teams?.name || '') || a.display_name.localeCompare(b.display_name);
-    }
-    if (sortKey === 'rapid_desc') return Number(cadenceRating(b, cadence) || 0) - Number(cadenceRating(a, cadence) || 0);
-    if (sortKey === 'rapid_asc') return Number(cadenceRating(a, cadence) || 0) - Number(cadenceRating(b, cadence) || 0);
-    if (sortKey === 'peak_global_desc') return Number(cadencePeak(b, cadence) || 0) - Number(cadencePeak(a, cadence) || 0);
-    if (sortKey === 'name_desc') return b.display_name.localeCompare(a.display_name);
-    return a.display_name.localeCompare(b.display_name);
-  });
-  els.players.classList.remove('skeleton');
-  if (!filtered.length) {
-    els.players.innerHTML = '<p class="muted">Aucun joueur ne correspond aux filtres sélectionnés.</p>';
-    return;
-  }
-  els.players.innerHTML = `<table><thead><tr><th>Joueur</th><th>Équipe</th><th>${cadenceLabel}</th><th>Peak ${cadenceLabel.toLowerCase()}</th></tr></thead><tbody>${filtered
-    .map(
-      (p) => `<tr><td><div class="player-cell">${avatarHTML(p, 'small')}${p.display_name} ${badge(p.is_captain)}</div></td><td>${p.teams?.name || '-'}</td><td>${cadenceRating(p, cadence) ?? '-'}</td><td>${cadencePeak(p, cadence) ?? '-'}</td></tr>`,
-    )
-    .join('')}</tbody></table>`;
-}
-
-function playerStrengthValue(player) {
-  return Number(cadencePeak(player, selectedCadence()) || 0);
-}
-
-function computeTeamStrengths(teams, players) {
-  const totals = new Map();
-  const counts = new Map();
-  for (const team of teams) {
-    totals.set(team.team_id, 0);
-    counts.set(team.team_id, 0);
-  }
-  for (const player of players) {
-    if (!player.team_id || !totals.has(player.team_id)) continue;
-    totals.set(player.team_id, totals.get(player.team_id) + playerStrengthValue(player));
-    counts.set(player.team_id, counts.get(player.team_id) + 1);
-  }
-  return new Map(
-    teams.map((team) => {
-      return [team.team_id, totals.get(team.team_id) || 0];
-    }),
-  );
-}
-
-function imbalanceScore(strengthByTeam) {
-  const values = [...strengthByTeam.values()];
-  const avg = values.reduce((sum, value) => sum + value, 0) / Math.max(values.length, 1);
-  return values.reduce((sum, value) => sum + Math.abs(value - avg), 0);
-}
-
-async function loadClubIdentity() {
-  if (!els.clubLogo) return;
-  if (els.clubLogo.complete && els.clubLogo.naturalWidth > 0) {
-    els.clubLogo.hidden = false;
-    if (els.clubLogoFallback) els.clubLogoFallback.hidden = true;
-    return;
-  }
-  els.clubLogo.addEventListener(
-    'load',
-    () => {
-      els.clubLogo.hidden = false;
-      if (els.clubLogoFallback) els.clubLogoFallback.hidden = true;
-    },
-    { once: true },
-  );
-  els.clubLogo.addEventListener(
-    'error',
-    () => {
-      els.clubLogo.hidden = true;
-      if (els.clubLogoFallback) els.clubLogoFallback.hidden = false;
-    },
-    { once: true },
-  );
-}
-
-function renderSwapRecommendations(teams, players) {
-  if (!els.swapRecommendations) return;
-  const teamNameById = new Map(teams.map((team) => [team.team_id, team.team_name]));
-  const byTeam = computeTeamStrengths(teams, players);
-  const currentImbalance = imbalanceScore(byTeam);
-  const movable = players.filter((player) => player.team_id && !player.is_captain);
-  const recommendations = [];
-
-  for (let i = 0; i < movable.length; i += 1) {
-    for (let j = i + 1; j < movable.length; j += 1) {
-      const a = movable[i];
-      const b = movable[j];
-      if (a.team_id === b.team_id) continue;
-      const simulated = new Map(byTeam);
-      const teamAPlayers = players.filter((p) => p.team_id === a.team_id).length || 1;
-      const teamBPlayers = players.filter((p) => p.team_id === b.team_id).length || 1;
-      const aValue = playerStrengthValue(a);
-      const bValue = playerStrengthValue(b);
-      simulated.set(a.team_id, simulated.get(a.team_id) + (bValue - aValue) / teamAPlayers);
-      simulated.set(b.team_id, simulated.get(b.team_id) + (aValue - bValue) / teamBPlayers);
-      const newImbalance = imbalanceScore(simulated);
-      const improvement = currentImbalance - newImbalance;
-      if (improvement <= 0) continue;
-      recommendations.push({
-        fromA: `${a.display_name} (${teamNameById.get(a.team_id)})`,
-        fromB: `${b.display_name} (${teamNameById.get(b.team_id)})`,
-        gain: improvement,
-      });
-    }
-  }
-
-  recommendations.sort((a, b) => b.gain - a.gain);
-  const best = recommendations.slice(0, 8);
-
-  if (!best.length) {
-    els.swapRecommendations.innerHTML = '<p>Aucun swap recommandé: les équipes semblent déjà équilibrées.</p>';
-    return;
-  }
-  els.swapRecommendations.innerHTML = `<table><thead><tr><th>Swap recommandé</th><th>Impact équilibre</th></tr></thead><tbody>${best
-    .map((swap) => `<tr><td>${swap.fromA} ⇄ ${swap.fromB}</td><td>+${swap.gain.toFixed(2)}</td></tr>`)
-    .join('')}</tbody></table>`;
-}
-
-function renderAdminRosters(teams, players) {
-  els.rosterBox.innerHTML = `<table><thead><tr><th>Équipe</th><th>Joueur</th><th>Cap.</th><th>Action</th></tr></thead><tbody>${
-    [...players]
-      .sort((a, b) => Number(effectivePeakRapid(b) || 0) - Number(effectivePeakRapid(a) || 0) || a.display_name.localeCompare(b.display_name))
-      .map(
-        (p) =>
-          `<tr><td>${p.teams?.name || 'Sans équipe'}</td><td>${p.display_name} (${p.chess_username})</td><td>${p.is_captain ? 'Oui' : 'Non'}</td><td><div class="row-actions"><button data-edit-player-username="${p.id}" data-current-username="${p.chess_username}">Modifier user_name</button> <button data-del-player="${p.id}">Supprimer joueur</button></div></td></tr>`,
-      )
-      .join('')
-  }${teams.map((t) => `<tr><td>${t.team_name}</td><td colspan="2">-</td><td><button data-del-team="${t.team_id}">Supprimer équipe</button></td></tr>`).join('')}</tbody></table>`;
-  for (const b of els.rosterBox.querySelectorAll('[data-edit-player-username]')) {
-    b.onclick = async () => {
-      if (!(await requireAuthenticatedAdminAction())) return;
-      const playerId = Number(b.dataset.editPlayerUsername);
-      const currentUsername = b.dataset.currentUsername || '';
-      const proposed = window.prompt('Nouveau user_name Chess.com pour ce joueur :', currentUsername);
-      if (proposed == null) return;
-
-      const validated = await verifyChessComUsernameExists(proposed);
-      if (!validated.ok) {
-        setAdminState(`❌ ${validated.message}`, true);
-        return;
-      }
-
-      const { error } = await supabase.from('players').update({ chess_username: validated.username }).eq('id', playerId);
-      if (error) return setAdminState(`❌ Mise à jour user_name impossible: ${error.message}`, true);
-
-      setAdminState(`✅ user_name Chess.com mis à jour (${validated.username})`);
-      await loadPublic();
-    };
-  }
-  for (const b of els.rosterBox.querySelectorAll('[data-del-player]')) {
-    b.onclick = async () => {
-      if (!(await requireAuthenticatedAdminAction())) return;
-      const { error } = await supabase.from('players').delete().eq('id', Number(b.dataset.delPlayer));
-      if (error) return setAdminState(`❌ Suppression joueur impossible: ${error.message}`, true);
-      await loadPublic();
-    };
-  }
-  for (const b of els.rosterBox.querySelectorAll('[data-del-team]')) {
-    b.onclick = async () => {
-      if (!(await requireAuthenticatedAdminAction())) return;
-      const { error } = await supabase.from('teams').delete().eq('id', Number(b.dataset.delTeam));
-      if (error) return setAdminState(`❌ Suppression équipe impossible: ${error.message}`, true);
-      await loadPublic();
-    };
-  }
-}
-
-async function loadAdminGames() {
-  const { data, error } = await supabase.from('games').select('id,match_id,board_no,played_at,white_username,black_username,result,excluded,game_url,pgn').order('played_at', { ascending: false }).limit(30);
-  if (error) {
-    setAdminState(`❌ Impossible de charger les parties: ${error.message}`, true);
-  }
-  state.adminGamesCache = new Map((data || []).map((g) => [g.id, g]));
-  els.adminGames.innerHTML = `<table><thead><tr><th>Board</th><th>Partie</th><th>Résultat</th><th>Exclure</th></tr></thead><tbody>${(data || [])
-    .map(
-      (g) => `<tr><td>M${g.match_id} / #${g.board_no}</td><td><a href="${g.game_url}" target="_blank" rel="noreferrer">${g.white_username} vs ${g.black_username}</a></td><td>${g.result}</td><td><div class="row-actions"><button data-exclude="${g.id}">${g.excluded ? 'Inclure' : 'Exclure'}</button></div></td></tr>`,
-    )
-    .join('')}</tbody></table>`;
-  for (const b of els.adminGames.querySelectorAll('[data-exclude]')) {
-    b.onclick = async () => {
-      if (!(await requireAuthenticatedAdminAction())) return;
-      const id = Number(b.dataset.exclude);
-      const { data: game, error: gameError } = await supabase.from('games').select('excluded').eq('id', id).single();
-      if (gameError) return setAdminState(`❌ Lecture partie impossible: ${gameError.message}`, true);
-      const { error: updateError } = await supabase.from('games').update({ excluded: !game.excluded }).eq('id', id);
-      if (updateError) return setAdminState(`❌ Mise à jour partie impossible: ${updateError.message}`, true);
-      await loadAdminGames();
-      await loadPublic();
-    };
-  }
-}
-
-els.authForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const email = document.getElementById('admin-email').value;
-  const password = document.getElementById('admin-password').value;
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) return setAdminState(`❌ ${error.message}`, true);
-  updateAdminUI(data.session);
-  setAdminState(isAdminSession(data.session) ? '✅ Connecté' : '⚠️ Connecté, mais rôle admin manquant.');
-  if (isAdminSession(data.session)) {
-    e.target.classList.add('collapsed');
-  }
-});
-els.adminLogout?.addEventListener('click', async () => {
-  await supabase.auth.signOut();
-  updateAdminUI(null);
-  setAdminState('Déconnecté.');
-  els.authForm.classList.remove('collapsed');
-});
-
-els.teamForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  if (!(await requireAuthenticatedAdminAction())) return;
-  const { error } = await supabase.from('teams').insert({ name: document.getElementById('team-name').value.trim() });
-  if (error) {
-    setAdminState(`❌ Impossible d'ajouter l'équipe: ${error.message}`, true);
-    return;
-  }
-  setAdminState('✅ Équipe ajoutée');
-  e.target.reset();
-  loadPublic();
-});
-
-els.playerForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  if (!(await requireAuthenticatedAdminAction())) return;
-  const teamId = els.playerTeam.value ? Number(els.playerTeam.value) : null;
-  const usernameCheck = await verifyChessComUsernameExists(document.getElementById('player-username').value);
-  if (!usernameCheck.ok) {
-    setAdminState(`❌ ${usernameCheck.message}`, true);
-    return;
-  }
-  const { error } = await supabase.from('players').insert({
-    chess_username: usernameCheck.username,
-    display_name: document.getElementById('player-name').value,
-    team_id: teamId,
-    is_captain: document.getElementById('player-captain').checked,
-  });
-  if (error) {
-    setAdminState(`❌ Impossible d'ajouter le joueur: ${error.message}`, true);
-    return;
-  }
-  setAdminState('✅ Joueur ajouté');
-  e.target.reset();
-  loadPublic();
-});
-
-els.drawGroups.onclick = async () => {
-  if (!(await requireAuthenticatedAdminAction())) return;
-  const { data: teams, error } = await supabase.from('teams').select('id');
-  if (error) return setAdminState(`❌ Impossible de charger les équipes: ${error.message}`, true);
-  const shuffled = [...teams].sort(() => Math.random() - 0.5);
-  const poolALimit = Math.ceil(shuffled.length / 2);
-  const updates = shuffled.map((t, i) => supabase.from('teams').update({ pool: i < poolALimit ? 'A' : 'B' }).eq('id', t.id));
-  const results = await Promise.all(updates);
-  const firstError = results.find((result) => result.error)?.error;
-  if (firstError) return setAdminState(`❌ Tirage des poules échoué: ${firstError.message}`, true);
-  showToast('✅ Poules re-tirées');
-  await loadPublic();
-};
-
-els.generatePlayoffs.onclick = async () => {
-  if (!(await requireAuthenticatedAdminAction())) return;
-  const { data, error } = await supabase.rpc('generate_playoff_matches');
-  if (error) return setAdminState(`❌ Génération phase finale impossible: ${error.message}`, true);
-  showToast(data || '✅ Phases finales générées');
-  await loadPublic();
-};
-
-els.syncElo.onclick = async () => {
-  if (!(await requireAuthenticatedAdminAction())) return;
-  showToast('⏳ Synchronisation ELO en cours...');
-  const { error } = await supabase.functions.invoke('sync-player-stats');
-  if (error) return setAdminState(`❌ Erreur sync ELO: ${error.message}`, true);
-  showToast('✅ ELO Chess.com synchronisé');
-  await loadPublic();
-};
-
-els.windowForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  if (!(await requireAuthenticatedAdminAction())) return;
-  const { error } = await supabase.from('board_windows').upsert({
-    match_id: Number(els.windowMatch.value),
-    board_no: Number(document.getElementById('window-board').value),
-    start_at: new Date(document.getElementById('window-start').value).toISOString(),
-    end_at: new Date(document.getElementById('window-end').value).toISOString(),
-  });
-  if (error) return setAdminState(`❌ Sauvegarde intervalle impossible: ${error.message}`, true);
-  showToast('✅ Intervalle sauvegardé');
-});
-
-els.syncGames.onclick = async () => {
-  if (!(await requireAuthenticatedAdminAction())) return;
-  if (!els.windowMatch.value) {
-    showToast('⚠️ Choisis un match avant l’import', true);
-    return;
-  }
-  showToast('⏳ Import des parties en cours...');
-  const { data, error } = await supabase.functions.invoke('sync-chess-games', {
-    body: { match_id: Number(els.windowMatch.value), max_games_per_board: 4 },
-  });
-  if (error) return setAdminState(`❌ Erreur import parties: ${error.message}`, true);
-  const imported = Number(data?.imported_games ?? 0);
-  const skippedBoards = Number(data?.skipped_boards ?? 0);
-  showToast(`✅ Parties importées (${imported})${skippedBoards ? ` · boards ignorés: ${skippedBoards}` : ''}`);
-  if (Array.isArray(data?.board_errors) && data.board_errors.length) {
-    setAdminState(`⚠️ ${data.board_errors.join(' | ')}`, true);
-  }
-  await loadAdminGames();
-  await loadPublic();
-};
-
-els.overrideForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  if (!(await requireAuthenticatedAdminAction())) return;
-  const { error } = await supabase
-    .from('matches')
-    .update({
-      score_a: Number(document.getElementById('override-score-a').value),
-      score_b: Number(document.getElementById('override-score-b').value),
-      goal_diff_a: Number(document.getElementById('override-goal-a').value),
-      goal_diff_b: Number(document.getElementById('override-goal-b').value),
-      override_score: true,
-      status: 'validated',
-    })
-    .eq('id', Number(els.overrideMatch.value));
-  if (error) return setAdminState(`❌ Override impossible: ${error.message}`, true);
-  showToast('✅ Override appliqué');
-  await loadPublic();
-});
-
-els.refreshPublic.onclick = loadPublic;
-els.matchesTabs?.addEventListener('click', (event) => {
-  const button = event.target.closest('[data-match-filter]');
-  if (!button) return;
-  state.matchFilter = button.dataset.matchFilter || 'all';
-  for (const tab of els.matchesTabs.querySelectorAll('[data-match-filter]')) {
-    const isActive = tab === button;
-    tab.classList.toggle('active', isActive);
-    tab.setAttribute('aria-selected', String(isActive));
-  }
-  renderMatchesByFilter(state.matches);
-});
-els.playersTeamFilter?.addEventListener('change', renderPlayersTable);
-els.playersSort?.addEventListener('change', renderPlayersTable);
-els.playersSearch?.addEventListener('input', renderPlayersTable);
-els.tournamentCadence?.addEventListener('change', () => {
-  state.tournamentCadence = selectedCadence();
-  updatePlayersSortLabels();
-  renderPlayersTable();
-  renderTeamShowcase(state.teams, state.players);
-  renderTeamDnD(state.teams, state.players);
-});
-els.mobileMenuBtn?.addEventListener('click', () => {
-  const expanded = els.mobileMenuBtn.getAttribute('aria-expanded') === 'true';
-  els.mobileMenuBtn.setAttribute('aria-expanded', String(!expanded));
-  els.topNav?.classList.toggle('open');
-});
-els.themeToggle?.addEventListener('click', () => {
-  const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
-  document.documentElement.dataset.theme = next;
-  localStorage.setItem('theme', next);
-  els.themeToggle.textContent = next === 'light' ? '☀️' : '🌙';
-});
-
-const observer = new IntersectionObserver((entries) => {
-  for (const entry of entries) {
-    if (entry.isIntersecting) entry.target.classList.add('show');
-  }
-}, { threshold: 0.08 });
-for (const block of document.querySelectorAll('.reveal')) observer.observe(block);
-
-applySavedTheme();
-state.tournamentCadence = selectedCadence();
-updatePlayersSortLabels();
-const { data: authData } = await supabase.auth.getSession();
-updateAdminUI(authData.session);
-supabase.auth.onAuthStateChange((_event, session) => updateAdminUI(session));
-setInterval(loadPublic, 60000);
-await loadPublic();
-await loadAdminGames();
-await loadClubIdentity();
