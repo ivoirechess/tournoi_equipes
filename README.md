@@ -1,36 +1,48 @@
-# IvoireChess Team Championship 2026 — Frontend statique
+# Tournoi d'échecs par équipes (GitHub Pages + Supabase)
 
-Refonte UI/UX premium du manager de tournoi avec logique complète de score sur **5 échiquiers** (échiquier 1 = 2 pts, échiquiers 2-5 = 1 pt, nul = 0.5 / 0.5), tie-breaker GD, et import Chess.com des 4 dernières parties d'un duel.
+Application statique premium pour gérer un tournoi d'échecs par équipes : interface publique + console admin, stockage dans Supabase, import automatique des parties Chess.com et synchronisation ELO.
 
-## Structure
+## Stack
+- Frontend statique: HTML/CSS/JS (module ES + supabase-js CDN).
+- Backend data: Supabase PostgreSQL + RLS.
+- Intégrations: API Chess.com + Supabase Edge Functions.
 
-- `index.html` : layout principal (hero, classement, affiches, équipes, joueurs, panneau admin caché).
-- `styles.css` : direction artistique premium (palette or/orange, Bebas/Oswald/Inter, cartes, halos, motif damier, drawer mobile-friendly).
-- `src/app.js` : logique applicative (render, scoring, import API Chess.com, cache local, override, export JSON).
-- `data/tournament.json` : **source de vérité figée** (équipes, joueurs, rounds, matchups board-by-board).
-- `data/results.json` : base des résultats dynamiques.
+## Déploiement rapide
+1. Créer un projet Supabase.
+2. Exécuter les migrations dans l'ordre:
+   - `001_init.sql`
+   - `002_seed_matches.sql`
+   - `003_scoring_recompute.sql`
+   - `005_fix_admin_table_permissions.sql`
+   - `006_hardening_idempotent.sql`
+   - `007_players_chesscom_profile_fields.sql`
+   > `004_supabase_complet_v2.sql` est optionnelle et concerne les tables "ligue" avancées.
+3. Déployer les edge functions:
+   - `supabase functions deploy sync-player-stats`
+   - `supabase functions deploy sync-chess-games`
+4. Définir les secrets edge functions:
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+5. Créer un utilisateur admin Supabase Auth puis lui attribuer `app_metadata.role = admin`.
+6. Adapter les constantes Supabase dans `src/app.js` si URL/clé changent.
+7. Publier ce dépôt sur GitHub et activer GitHub Pages (branche principale / root).
 
-## Données et persistance
+## Fonctionnalités clés
+- Gestion complète des équipes, joueurs, poules, scores, exclusions manuelles.
+- Classements poules: points + différence de buts.
+- Génération demi-finales/finale selon classement.
+- Support départage capitaines via table `captain_tiebreak_sets`.
+- Import des 4 parties rapides/échiquier depuis Chess.com sur plage horaire admin.
+- Profil joueurs avec rapid/blitz/bullet + pics ELO.
+- Récupération Chess.com enrichie: avatars, titre et pays des joueurs.
+- Force d'équipe via vue `team_strength`.
 
-1. Le planning + rosters vivent uniquement dans `data/tournament.json`.
-2. Les résultats sont initialisés depuis `data/results.json`.
-3. En runtime, les modifications admin sont persistées en local via:
-   - `localStorage[ivoirechess.results.v2]` pour les scores,
-   - `localStorage[ivoirechess.chesscom.archives.v1]` pour le cache d'archives API Chess.com,
-   - `localStorage[ivoirechess.override.log.v1]` pour le journal d'override.
-4. Le bouton **Exporter results.json** permet de sauvegarder les résultats modifiés.
+## Sécurité
+- RLS activé sur toutes les tables d'écriture.
+- Lecture publique autorisée.
+- Écriture réservée aux comptes avec `app_metadata.role = admin`.
 
-## Workflow admin
-
-1. Activer le **Mode admin** (code local par défaut: `ivoire2026`, à remplacer dans `src/app.js`).
-2. Cliquer un match, puis un échiquier.
-3. Définir la fenêtre (début/fin) puis cliquer **Importer les 4 dernières parties**.
-4. Vérifier les 4 pastilles W/L/D puis valider le board.
-5. En cas d'API indisponible, utiliser l'override manuel (points + GD), traçable dans le journal.
-
-## API Chess.com utilisée
-
-- `GET https://api.chess.com/pub/player/{username}/games/archives`
-- `GET https://api.chess.com/pub/player/{username}/games/{YYYY}/{MM}`
-
-Le moteur filtre les parties `A vs B` (insensible à la casse), limite aux 4 plus récentes dans la plage, et calcule automatiquement gagnant board + GD.
+## Notes produit
+- Le frontend est compatible mobile (tables scrollables, cartes responsives).
+- Pour le replay PGN avancé, brancher un viewer (ex: chessground/chessboard.js) dans la section parties.
+- Pour le suivi live avec Stockfish, prévoir un worker WASM côté client pour éviter blocage UI.
