@@ -1,0 +1,66 @@
+{
+  "name": "IvoireChess Team Championship 2026",
+  "dateStart": "2026-05-02T19:00:00Z",
+  "dateEnd": "2026-06-07T22:00:00Z",
+  "rounds": [
+    { "weekend": 1, "start": "2026-05-02T19:00:00Z", "end": "2026-05-03T22:00:00Z" },
+    { "weekend": 2, "start": "2026-05-09T19:00:00Z", "end": "2026-05-10T22:00:00Z" },
+    { "weekend": 3, "start": "2026-05-16T19:00:00Z", "end": "2026-05-17T22:00:00Z" },
+    { "weekend": 4, "start": "2026-05-23T19:00:00Z", "end": "2026-05-24T22:00:00Z" },
+    { "weekend": 5, "start": "2026-05-30T19:00:00Z", "end": "2026-05-31T22:00:00Z" },
+    { "weekend": 6, "start": "2026-06-06T19:00:00Z", "end": "2026-06-07T22:00:00Z" }
+  ],
+  "teams": [
+    { "id": "elfirouj", "name": "Team Elfirouj", "pool": "A" },
+    { "id": "ivoire", "name": "Team IvoireChess", "pool": "A" },
+    { "id": "tetrix", "name": "Team Tetrix", "pool": "A" },
+    { "id": "alfene", "name": "Team Alfene", "pool": "B" },
+    { "id": "jeandaniel", "name": "Team Jean_Daniel", "pool": "B" },
+    { "id": "yoann", "name": "Team Yoann", "pool": "B" }
+  ],
+  "players": [
+    { "id": "p1", "teamId": "elfirouj", "name": "Elfirouj", "captain": true, "eloRapid": 2140, "chesscom": "elfirouj" },
+    { "id": "p2", "teamId": "elfirouj", "name": "Amani", "captain": false, "eloRapid": 1935, "chesscom": "amani225" },
+    { "id": "p3", "teamId": "elfirouj", "name": "Ilyas", "captain": false, "eloRapid": 1880, "chesscom": "ilyasci" },
+    { "id": "p4", "teamId": "elfirouj", "name": "Kouadio", "captain": false, "eloRapid": 1810, "chesscom": "kouadiochess" },
+    { "id": "p5", "teamId": "elfirouj", "name": "Nestor", "captain": false, "eloRapid": 1765, "chesscom": "nestorci" },
+
+    { "id": "p6", "teamId": "ivoire", "name": "IvoireMaster", "captain": true, "eloRapid": 2210, "chesscom": "ivoiremaster" },
+    { "id": "p7", "teamId": "ivoire", "name": "Nina", "captain": false, "eloRapid": 1990, "chesscom": "ninaci" },
+    { "id": "p8", "teamId": "ivoire", "name": "Paul", "captain": false, "eloRapid": 1915, "chesscom": "paulci" },
+    { "id": "p9", "teamId": "ivoire", "name": "Soro", "captain": false, "eloRapid": 1855, "chesscom": "sorochess" },
+    { "id": "p10", "teamId": "ivoire", "name": "Mina", "captain": false, "eloRapid": 1800, "chesscom": "minaivoire" },
+
+    { "id": "p11", "teamId": "tetrix", "name": "Tetrix", "captain": true, "eloRapid": 2175, "chesscom": "tetrixci" },
+    { "id": "p12", "teamId": "tetrix", "name": "Jules", "captain": false, "eloRapid": 1988, "chesscom": "juleschess" },
+    { "id": "p13", "teamId": "tetrix", "name": "Maho", "captain": false, "eloRapid": 1901, "chesscom": "mahoci" },
+    { "id": "p14", "teamId": "tetrix", "name": "Kevin", "captain": false, "eloRapid": 1844, "chesscom": "kevci" },
+    { "id": "p15", "teamId": "tetrix", "name": "Rico", "captain": false, "eloRapid": 1780, "chesscom": "ricoci" },
+
+    { "id": "p16", "teamId": "alfene", "name": "Alfene", "captain": true, "eloRapid": 2110, "chesscom": "alfene" },
+    { "id": "p17", "teamId": "alfene", "name": "Moussa", "captain": false, "eloRapid": 1950, "chesscom": "moussaci" },
+    { "id": "p18", "teamId": "alfene", "name": "Chris", "captain": false, "eloRapid": 1890, "chesscom": "chrisci" },
+    { "id": "p19", "teamId": "alfene", "name": "Ousmane", "captain": false, "eloRapid": 1832, "chesscom": "ousmaneci" },
+    { "id": "p20", "teamId": "alfene", "name": "Abel", "captain": false, "eloRapid": 1776, "chesscom": "abelci" },
+
+    { "id": "p21", "teamId": "jeandaniel", "name": "Jean_Daniel", "captain": true, "eloRapid": 2080, "chesscom": "jeandaniel" },
+    { "id": "p22", "teamId": "jeandaniel", "name": "Larson", "captain": false, "eloRapid": 1940, "chesscom": "larsonci" },
+    { "id": "p23", "teamId": "jeandaniel", "name": "Noel", "captain": false, "eloRapid": 1885, "chesscom": "noelci" },
+    { "id": "p24", "teamId": "jeandaniel", "name": "Yapi", "captain": false, "eloRapid": 1819, "chesscom": "yapichess" },
+    { "id": "p25", "teamId": "jeandaniel", "name": "Boris", "captain": false, "eloRapid": 1769, "chesscom": "borisci" },
+
+    { "id": "p26", "teamId": "yoann", "name": "yoann565", "captain": true, "eloRapid": 2235, "chesscom": "yoann565" },
+    { "id": "p27", "teamId": "yoann", "name": "Sami", "captain": false, "eloRapid": 2002, "chesscom": "samici" },
+    { "id": "p28", "teamId": "yoann", "name": "Felix", "captain": false, "eloRapid": 1924, "chesscom": "felixci" },
+    { "id": "p29", "teamId": "yoann", "name": "Edou", "captain": false, "eloRapid": 1860, "chesscom": "edouchess" },
+    { "id": "p30", "teamId": "yoann", "name": "Naby", "captain": false, "eloRapid": 1798, "chesscom": "nabyci" }
+  ],
+  "matches": [
+    { "id": "m1", "pool": "A", "weekend": 1, "kickoff": "2026-05-02T19:00:00Z", "end": "2026-05-03T22:00:00Z", "teamA": "elfirouj", "teamB": "ivoire", "boards": [{ "board": 1, "playerA": "p1", "playerB": "p6" }, { "board": 2, "playerA": "p2", "playerB": "p7" }, { "board": 3, "playerA": "p3", "playerB": "p8" }, { "board": 4, "playerA": "p4", "playerB": "p9" }, { "board": 5, "playerA": "p5", "playerB": "p10" }] },
+    { "id": "m2", "pool": "B", "weekend": 1, "kickoff": "2026-05-02T19:00:00Z", "end": "2026-05-03T22:00:00Z", "teamA": "alfene", "teamB": "jeandaniel", "boards": [{ "board": 1, "playerA": "p16", "playerB": "p21" }, { "board": 2, "playerA": "p17", "playerB": "p22" }, { "board": 3, "playerA": "p18", "playerB": "p23" }, { "board": 4, "playerA": "p19", "playerB": "p24" }, { "board": 5, "playerA": "p20", "playerB": "p25" }] },
+    { "id": "m3", "pool": "A", "weekend": 2, "kickoff": "2026-05-09T19:00:00Z", "end": "2026-05-10T22:00:00Z", "teamA": "ivoire", "teamB": "tetrix", "boards": [{ "board": 1, "playerA": "p6", "playerB": "p11" }, { "board": 2, "playerA": "p7", "playerB": "p12" }, { "board": 3, "playerA": "p8", "playerB": "p13" }, { "board": 4, "playerA": "p9", "playerB": "p14" }, { "board": 5, "playerA": "p10", "playerB": "p15" }] },
+    { "id": "m4", "pool": "B", "weekend": 2, "kickoff": "2026-05-09T19:00:00Z", "end": "2026-05-10T22:00:00Z", "teamA": "jeandaniel", "teamB": "yoann", "boards": [{ "board": 1, "playerA": "p21", "playerB": "p26" }, { "board": 2, "playerA": "p22", "playerB": "p27" }, { "board": 3, "playerA": "p23", "playerB": "p28" }, { "board": 4, "playerA": "p24", "playerB": "p29" }, { "board": 5, "playerA": "p25", "playerB": "p30" }] },
+    { "id": "m5", "pool": "A", "weekend": 3, "kickoff": "2026-05-16T19:00:00Z", "end": "2026-05-17T22:00:00Z", "teamA": "tetrix", "teamB": "elfirouj", "boards": [{ "board": 1, "playerA": "p11", "playerB": "p1" }, { "board": 2, "playerA": "p12", "playerB": "p2" }, { "board": 3, "playerA": "p13", "playerB": "p3" }, { "board": 4, "playerA": "p14", "playerB": "p4" }, { "board": 5, "playerA": "p15", "playerB": "p5" }] },
+    { "id": "m6", "pool": "B", "weekend": 3, "kickoff": "2026-05-16T19:00:00Z", "end": "2026-05-17T22:00:00Z", "teamA": "yoann", "teamB": "alfene", "boards": [{ "board": 1, "playerA": "p26", "playerB": "p16" }, { "board": 2, "playerA": "p27", "playerB": "p17" }, { "board": 3, "playerA": "p28", "playerB": "p18" }, { "board": 4, "playerA": "p29", "playerB": "p19" }, { "board": 5, "playerA": "p30", "playerB": "p20" }] }
+  ]
+}
