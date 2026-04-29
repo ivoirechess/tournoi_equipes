@@ -19,8 +19,7 @@ const els = {
       playerTeam: document.getElementById('player-team'),
   drawGroups: document.getElementById('draw-groups'),
   generatePlayoffs: document.getElementById('generate-playoffs'),
-  syncElo: document.getElementById('sync-elo'),
-  refreshPublic: document.getElementById('refresh-public'),
+  resetAllResults: document.getElementById('reset-all-results'),
           scheduleWindowStart: document.getElementById('schedule-window-start'),
   scheduleWindowEnd: document.getElementById('schedule-window-end'),
   createMatchForm: document.getElementById('create-match-form'),
@@ -930,12 +929,6 @@ function computeBoardLive(score, boardNo) {
   return { status: 'draw', a: d, b: d, label: 'Nul' };
 }
 
-function getPlayerAvatar(player) {
-  if (!player) return 'https://placehold.co/64x64/1c2337/e9f0ff?text=%E2%99%9F';
-  if (player.chess_username) return `https://images.chesscomfiles.com/uploads/v1/user/${encodeURIComponent(player.chess_username)}/avatar.jpg`;
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(player.display_name || 'Joueur')}&background=1c2337&color=e9f0ff&size=64`;
-}
-
 function getCompletedBoards(scores) {
   return scores.filter((s) => s.game_points_a != null && s.game_points_b != null).length;
 }
@@ -962,7 +955,7 @@ async function loadResultsForMatch(matchId) {
 
   const { data: roster } = await supabase
     .from('players')
-    .select('id,display_name,chess_username,team_id,is_captain,rapid_rating,blitz_rating,bullet_rating,peak_rapid,peak_blitz,peak_bullet')
+    .select('id,display_name,chess_username,avatar_url,team_id,is_captain,rapid_rating,blitz_rating,bullet_rating,peak_rapid,peak_blitz,peak_bullet')
     .in('team_id', [match.team_a_id, match.team_b_id]);
 
   const byTeam = new Map([[match.team_a_id, []], [match.team_b_id, []]]);
@@ -1022,7 +1015,7 @@ function renderResultsBoards() {
       return `<article class="result-board-row ${live.status}">
         <div class="rb-board">#${pair.board_no}</div>
         <div class="rb-player rb-side-a">
-          <img src="${getPlayerAvatar(playerA)}" alt="Avatar ${playerA?.display_name || 'Joueur A'}" loading="lazy" onerror="this.onerror=null;this.src='https://placehold.co/64x64/1c2337/e9f0ff?text=%E2%99%9F';" />
+          ${avatarHTML(playerA)}
           <strong>${playerA?.display_name || '—'}</strong>
         </div>
         <div class="rb-scores-inline">
@@ -1032,7 +1025,7 @@ function renderResultsBoards() {
         </div>
         <div class="rb-player rb-side-b">
           <strong>${playerB?.display_name || '—'}</strong>
-          <img src="${getPlayerAvatar(playerB)}" alt="Avatar ${playerB?.display_name || 'Joueur B'}" loading="lazy" onerror="this.onerror=null;this.src='https://placehold.co/64x64/1c2337/e9f0ff?text=%E2%99%9F';" />
+          ${avatarHTML(playerB)}
         </div>
         <div class="rb-result ${live.status}">${live.label}</div>
       </article>`;
@@ -1114,7 +1107,41 @@ els.resultsSave?.addEventListener('click', async () => {
   await loadPublic();
   await loadResultsForMatch(String(ctx.match.id));
 });
-if (els.refreshPublic) els.refreshPublic.onclick = loadPublic;
+els.resetAllResults?.addEventListener('click', async () => {
+  if (!(await requireAuthenticatedAdminAction())) return;
+  const confirmed = window.confirm("Confirmer la remise à zéro globale ? Tous les scores d'échiquier seront effacés et les matchs repassés à « À venir ».");
+  if (!confirmed) return;
+
+  const { data: allMatches, error: matchesError } = await supabase.from('matches').select('id');
+  if (matchesError) {
+    showToast(`❌ ${matchesError.message}`);
+    return;
+  }
+
+  const { error: boardsError } = await supabase
+    .from('match_boards')
+    .update({ game_points_a: null, game_points_b: null });
+  if (boardsError) {
+    showToast(`❌ ${boardsError.message}`);
+    return;
+  }
+
+  const { error: statusError } = await supabase.from('matches').update({ status: 'scheduled' });
+  if (statusError) {
+    showToast(`❌ ${statusError.message}`);
+    return;
+  }
+
+  for (const match of allMatches || []) {
+    await supabase.rpc('recompute_match_scores', { p_match_id: match.id });
+  }
+
+  await loadPublic();
+  if (state.resultsContext?.match?.id) {
+    await loadResultsForMatch(String(state.resultsContext.match.id));
+  }
+  showToast('🧹 Tous les scores ont été remis à zéro et les matchs repassés à « À venir ».');
+});
 els.matchesTabs?.addEventListener('click', (event) => {
   const button = event.target.closest('[data-match-filter]');
   if (!button) return;
