@@ -1,11 +1,11 @@
 # Tournoi d'échecs par équipes (GitHub Pages + Supabase)
 
-Application statique premium pour gérer un tournoi d'échecs par équipes : interface publique + console admin, stockage dans Supabase, import automatique des parties Chess.com et synchronisation ELO.
+Application statique premium pour gérer un tournoi d'échecs par équipes : interface publique + console admin, stockage dans Supabase, saisie manuelle des scores par échiquier et synchronisation ELO.
 
 ## Stack
 - Frontend statique: HTML/CSS/JS (module ES + supabase-js CDN).
 - Backend data: Supabase PostgreSQL + RLS.
-- Intégrations: API Chess.com + Supabase Edge Functions.
+- Intégrations: API Chess.com (profils/ELO) + Supabase Edge Functions.
 
 ## Déploiement rapide
 1. Créer un projet Supabase.
@@ -18,10 +18,10 @@ Application statique premium pour gérer un tournoi d'échecs par équipes : int
    - `007_players_chesscom_profile_fields.sql`
    - `011_captain_board_double_points.sql`
    - `012_match_time_window_and_5_boards.sql`
+   - `013_manual_scoring_priority.sql`
    > `004_supabase_complet_v2.sql` est optionnelle et concerne les tables "ligue" avancées.
 3. Déployer les edge functions:
    - `supabase functions deploy sync-player-stats`
-   - `supabase functions deploy sync-chess-games`
 4. Définir les secrets edge functions:
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
@@ -34,7 +34,7 @@ Application statique premium pour gérer un tournoi d'échecs par équipes : int
 - Classements poules: points + différence de buts.
 - Génération demi-finales/finale selon classement.
 - Support départage capitaines via table `captain_tiebreak_sets`.
-- Import des 4 parties rapides/échiquier depuis Chess.com sur plage horaire admin.
+- Saisie manuelle des points par échiquier (0 à 4, pas de 0.5) avec recalcul automatique du score match.
 - Profil joueurs avec rapid/blitz/bullet + pics ELO.
 - Récupération Chess.com enrichie: avatars, titre et pays des joueurs.
 - Force d'équipe via vue `team_strength`.
