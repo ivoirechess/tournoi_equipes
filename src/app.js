@@ -68,6 +68,7 @@ const state = {
   matchFilter: 'all',
   matches: [],
   rawTeams: [],
+  sharedAdminUnlocked: false,
 };
 
 for (const btn of document.querySelectorAll('.tab-btn')) {
@@ -89,6 +90,7 @@ for (const btn of document.querySelectorAll('[data-tab-link]')) {
 
 const badge = (isCaptain) => (isCaptain ? '<span class="badge">👑 Capitaine</span>' : '');
 const CADENCE_LABELS = { rapid: 'Rapid', blitz: 'Blitz', bullet: 'Bullet' };
+const SHARED_ADMIN_PASSWORD = 'ADMIN1234';
 
 function selectedCadence() {
   const value = els.tournamentCadence?.value || state.tournamentCadence || 'rapid';
@@ -180,11 +182,15 @@ function isAdminSession(session) {
 
 function updateAdminUI(session) {
   state.adminSession = session || null;
-  const isAdmin = isAdminSession(session);
-  document.body.classList.toggle('admin-logged', Boolean(session));
+  const sharedAdmin = Boolean(state.sharedAdminUnlocked);
+  const isAdmin = sharedAdmin || isAdminSession(session);
+  document.body.classList.toggle('admin-logged', Boolean(session) || sharedAdmin);
   document.body.classList.toggle('admin-verified', isAdmin);
   if (els.authState) {
-    if (!session) {
+    if (sharedAdmin) {
+      els.authState.textContent = '✅ Connecté en mode admin partagé';
+      els.authState.style.color = '#7ef2b8';
+    } else if (!session) {
       els.authState.textContent = 'Non connecté';
       els.authState.style.color = '';
     } else if (isAdmin) {
@@ -196,12 +202,13 @@ function updateAdminUI(session) {
     }
   }
   if (els.authForm) {
-    const shouldCollapse = Boolean(session) && isAdmin;
+    const shouldCollapse = (Boolean(session) || sharedAdmin) && isAdmin;
     els.authForm.classList.toggle('collapsed', shouldCollapse);
   }
 }
 
 async function requireAuthenticatedAdminAction() {
+  if (state.sharedAdminUnlocked) return true;
   const { data, error } = await supabase.auth.getSession();
   if (error) {
     setAdminState(`❌ Session invalide: ${error.message}`, true);
@@ -895,8 +902,18 @@ async function loadAdminGames() {
 
 els.authForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const email = document.getElementById('admin-email').value;
+  const email = document.getElementById('admin-email').value.trim();
   const password = document.getElementById('admin-password').value;
+
+  if (!email && password === SHARED_ADMIN_PASSWORD) {
+    state.sharedAdminUnlocked = true;
+    updateAdminUI(null);
+    setAdminState('✅ Mode admin partagé activé (ADMIN1234).');
+    e.target.classList.add('collapsed');
+    return;
+  }
+
+  state.sharedAdminUnlocked = false;
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) return setAdminState(`❌ ${error.message}`, true);
   updateAdminUI(data.session);
@@ -906,6 +923,7 @@ els.authForm.addEventListener('submit', async (e) => {
   }
 });
 els.adminLogout?.addEventListener('click', async () => {
+  state.sharedAdminUnlocked = false;
   await supabase.auth.signOut();
   updateAdminUI(null);
   setAdminState('Déconnecté.');
