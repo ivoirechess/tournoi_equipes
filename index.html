@@ -293,7 +293,7 @@
         <article class="card admin-module">
           <div class="module-head">
             <h3>Import parties Chess.com</h3>
-            <p class="muted">Définit les fenêtres de collecte et importe les parties automatiquement.</p>
+            <p class="muted">Importe automatiquement les 4 dernières parties par échiquier pour le match sélectionné.</p>
           </div>
           <form id="schedule-form" class="grid three" style="margin-bottom:1rem">
             <label>Match<select id="schedule-match"></select></label>
@@ -307,13 +307,7 @@
             </label>
             <button type="submit" class="btn primary" style="align-self:flex-end">📅 Planifier le match</button>
           </form>
-          <form id="window-form" class="grid three" style="margin-bottom:1rem">
-            <label>Match<select id="window-match"></select></label>
-            <label>Échiquier #<input type="number" id="window-board" min="1" max="5" required /></label>
-            <label>Début<input type="datetime-local" id="window-start" required /></label>
-            <label>Fin<input type="datetime-local" id="window-end" required /></label>
-            <button type="submit" class="btn primary" style="align-self:flex-end">Enregistrer plage</button>
-          </form>
+          <label style="display:block;margin-bottom:1rem;max-width:360px">Match<select id="window-match"></select></label>
           <button id="sync-games" class="btn primary">⬇️ Importer les parties (max 4/échiquier)</button>
           <div id="admin-games" class="table-wrap" style="margin-top:1rem"></div>
         </article>

@@ -23,7 +23,6 @@ const els = {
   generatePlayoffs: document.getElementById('generate-playoffs'),
   syncElo: document.getElementById('sync-elo'),
   refreshPublic: document.getElementById('refresh-public'),
-  windowForm: document.getElementById('window-form'),
   scheduleForm: document.getElementById('schedule-form'),
   scheduleMatch: document.getElementById('schedule-match'),
   scheduleAt: document.getElementById('schedule-at'),
@@ -880,10 +879,28 @@ async function loadAdminGames() {
   if (error) {
     setAdminState(`❌ Impossible de charger les parties: ${error.message}`, true);
   }
+  const matchIds = Array.from(new Set((data || []).map((g) => Number(g.match_id)).filter((id) => Number.isFinite(id) && id > 0)));
+  const confrontationByBoard = new Map();
+  if (matchIds.length) {
+    const { data: boardsData } = await supabase
+      .from('match_boards')
+      .select('match_id,board_no,player_a:players!match_boards_player_a_id_fkey(chess_username),player_b:players!match_boards_player_b_id_fkey(chess_username)')
+      .in('match_id', matchIds);
+    for (const board of boardsData || []) {
+      const key = `${board.match_id}-${board.board_no}`;
+      const a = board?.player_a?.chess_username || 'joueur_a';
+      const b = board?.player_b?.chess_username || 'joueur_b';
+      confrontationByBoard.set(key, `${a} vs ${b}`);
+    }
+  }
   state.adminGamesCache = new Map((data || []).map((g) => [g.id, g]));
   els.adminGames.innerHTML = `<table><thead><tr><th>Échiquier / Match</th><th>Partie</th><th>Résultat</th><th>Exclure</th></tr></thead><tbody>${(data || [])
     .map(
-      (g) => `<tr><td>Échiquier ${g.board_no} · ${g.matches?.team_a?.name || '?'} vs ${g.matches?.team_b?.name || '?'}</td><td><a href="${g.game_url}" target="_blank" rel="noreferrer">${g.white_username} vs ${g.black_username}</a></td><td>${g.result}</td><td><div class="row-actions"><button data-exclude="${g.id}">${g.excluded ? 'Inclure' : 'Exclure'}</button></div></td></tr>`,
+      (g) => {
+        const boardKey = `${g.match_id}-${g.board_no}`;
+        const confrontation = confrontationByBoard.get(boardKey) || `${g.matches?.team_a?.name || '?'} vs ${g.matches?.team_b?.name || '?'}`;
+        return `<tr><td>Échiquier ${g.board_no} · ${confrontation}</td><td><a href="${g.game_url}" target="_blank" rel="noreferrer">${g.white_username} vs ${g.black_username}</a></td><td>${g.result}</td><td><div class="row-actions"><button data-exclude="${g.id}">${g.excluded ? 'Inclure' : 'Exclure'}</button></div></td></tr>`;
+      },
     )
     .join('')}</tbody></table>`;
   for (const b of els.adminGames.querySelectorAll('[data-exclude]')) {
@@ -905,10 +922,10 @@ els.authForm.addEventListener('submit', async (e) => {
   const email = document.getElementById('admin-email').value.trim();
   const password = document.getElementById('admin-password').value;
 
-  if (!email && password === SHARED_ADMIN_PASSWORD) {
+  if (password === SHARED_ADMIN_PASSWORD) {
     state.sharedAdminUnlocked = true;
     updateAdminUI(null);
-    setAdminState('✅ Mode admin partagé activé (ADMIN1234).');
+    setAdminState(`✅ Mode admin partagé activé (ADMIN1234)${email ? ` pour ${email}.` : '.'}`);
     e.target.classList.add('collapsed');
     return;
   }
@@ -1099,19 +1116,6 @@ els.scheduleForm?.addEventListener('submit', async (e) => {
   if (error) return setAdminState(`❌ Planification impossible: ${error.message}`, true);
   showToast('✅ Match planifié');
   await loadPublic();
-});
-
-els.windowForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  if (!(await requireAuthenticatedAdminAction())) return;
-  const { error } = await supabase.from('board_windows').upsert({
-    match_id: Number(els.windowMatch.value),
-    board_no: Number(document.getElementById('window-board').value),
-    start_at: new Date(document.getElementById('window-start').value).toISOString(),
-    end_at: new Date(document.getElementById('window-end').value).toISOString(),
-  });
-  if (error) return setAdminState(`❌ Sauvegarde intervalle impossible: ${error.message}`, true);
-  showToast('✅ Intervalle sauvegardé');
 });
 
 els.syncGames?.addEventListener('click', async () => {
