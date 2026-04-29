@@ -16,6 +16,8 @@ Application statique premium pour gérer un tournoi d'échecs par équipes : int
    - `005_fix_admin_table_permissions.sql`
    - `006_hardening_idempotent.sql`
    - `007_players_chesscom_profile_fields.sql`
+   - `011_captain_board_double_points.sql`
+   - `012_match_time_window_and_5_boards.sql`
    > `004_supabase_complet_v2.sql` est optionnelle et concerne les tables "ligue" avancées.
 3. Déployer les edge functions:
    - `supabase functions deploy sync-player-stats`

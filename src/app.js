@@ -27,6 +27,8 @@ const els = {
   scheduleMatch: document.getElementById('schedule-match'),
   scheduleAt: document.getElementById('schedule-at'),
   scheduleStatus: document.getElementById('schedule-status'),
+  scheduleWindowStart: document.getElementById('schedule-window-start'),
+  scheduleWindowEnd: document.getElementById('schedule-window-end'),
   createMatchForm: document.getElementById('create-match-form'),
   createMatchPhase: document.getElementById('create-match-phase'),
   createMatchTeamA: document.getElementById('create-match-team-a'),
@@ -34,7 +36,7 @@ const els = {
   createMatchAt: document.getElementById('create-match-at'),
   bulkCreatePoolMatches: document.getElementById('bulk-create-pool-matches'),
   windowMatch: document.getElementById('window-match'),
-  syncGames: document.getElementById('sync-games'),
+  boardsManager: document.getElementById('boards-manager'),
   adminGames: document.getElementById('admin-games'),
   playersTeamFilter: document.getElementById('players-team-filter'),
   playersSort: document.getElementById('players-sort'),
@@ -68,6 +70,8 @@ const state = {
   matches: [],
   rawTeams: [],
   sharedAdminUnlocked: false,
+  selectedMatchId: null,
+  matchBoards: [],
 };
 
 for (const btn of document.querySelectorAll('.tab-btn')) {
@@ -483,6 +487,7 @@ async function loadPublic() {
   if (els.createMatchTeamA) els.createMatchTeamA.innerHTML = teamSelectOptions;
   if (els.createMatchTeamB) els.createMatchTeamB.innerHTML = teamSelectOptions;
   populateMatchSelectors(matches || []);
+  await refreshBoardsManager();
   renderTeamDnD(teams || [], players || []);
   renderAdminRosters(teams || [], players || []);
   renderTeamShowcase(teams || [], players || []);
@@ -1106,38 +1111,154 @@ els.scheduleForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!(await requireAuthenticatedAdminAction())) return;
   const matchId = Number(els.scheduleMatch?.value);
-  if (!matchId) {
-    showToast('⚠️ Choisis un match à planifier.', true);
-    return;
-  }
+  if (!matchId) { showToast('⚠️ Choisis un match.', true); return; }
   const scheduledAt = els.scheduleAt?.value ? new Date(els.scheduleAt.value).toISOString() : null;
   const status = els.scheduleStatus?.value || 'scheduled';
-  const { error } = await supabase.from('matches').update({ scheduled_at: scheduledAt, status }).eq('id', matchId);
+  const windowStart = els.scheduleWindowStart?.value ? new Date(els.scheduleWindowStart.value).toISOString() : null;
+  const windowEnd = els.scheduleWindowEnd?.value ? new Date(els.scheduleWindowEnd.value).toISOString() : null;
+
+  const { error } = await supabase.from('matches').update({
+    scheduled_at: scheduledAt,
+    status,
+    match_started_at: windowStart,
+    match_ended_at: windowEnd,
+  }).eq('id', matchId);
   if (error) return setAdminState(`❌ Planification impossible: ${error.message}`, true);
   showToast('✅ Match planifié');
   await loadPublic();
 });
 
-els.syncGames?.addEventListener('click', async () => {
-  if (!(await requireAuthenticatedAdminAction())) return;
-  if (!els.windowMatch.value) {
-    showToast('⚠️ Choisis un match avant l’import', true);
+els.windowMatch?.addEventListener('change', refreshBoardsManager);
+
+function playerOptionMarkup(player) {
+  return `<option value="${player.id}">${player.display_name}${player.is_captain ? ' 👑' : ''}${player.chess_username ? ` (${player.chess_username})` : ''}</option>`;
+}
+
+function renderBoardCard(board, optsA, optsB, games, match) {
+  const hasPairing = Boolean(board.player_a_id && board.player_b_id);
+  const matchWindow = [match.match_started_at, match.match_ended_at].filter(Boolean).map((iso) => new Date(iso).toLocaleString('fr-FR')).join(' → ');
+  return `<article class="board-card ${hasPairing ? 'has-pairing' : 'no-pairing'}">
+    <div class="board-card-head">
+      <h5>Échiquier ${board.board_no}</h5>
+      ${board.board_no === 1 ? '<span class="badge">👑 Échiquier capitaine ×2 pts</span>' : ''}
+    </div>
+    <form data-pairing-form data-match-id="${match.id}" data-board-no="${board.board_no}" class="board-pairing">
+      <label>Joueur équipe A<select name="player_a_id"><option value="">— Choisir —</option>${optsA.map(playerOptionMarkup).join('')}</select></label>
+      <label>Joueur équipe B<select name="player_b_id"><option value="">— Choisir —</option>${optsB.map(playerOptionMarkup).join('')}</select></label>
+      <div class="board-actions">
+        <button type="submit" class="btn">💾 Enregistrer</button>
+        <button type="button" class="btn primary" data-import-board data-match-id="${match.id}" data-board-no="${board.board_no}" ${hasPairing ? '' : 'disabled'}>⬇️ Importer parties</button>
+        ${games.length ? `<button type="button" class="btn danger-btn" data-clear-board data-match-id="${match.id}" data-board-no="${board.board_no}">🗑️ Supprimer parties</button>` : ''}
+      </div>
+    </form>
+    <div class="board-games">
+      <div><b>Parties (${games.length})</b> · Sous-score: ${Number(board.game_points_a || 0)} - ${Number(board.game_points_b || 0)} · Board points: ${Number(board.board_points_a || 0)} - ${Number(board.board_points_b || 0)}</div>
+      ${matchWindow ? `<small class="muted">Fenêtre: ${matchWindow}</small>` : ''}
+      <ul>${games.map((g) => `<li>${new Date(g.played_at).toLocaleString('fr-FR')} · ${g.white_username} vs ${g.black_username} · ${g.result}${g.excluded ? ' (exclue)' : ''}</li>`).join('') || '<li>Aucune partie importée.</li>'}</ul>
+    </div>
+  </article>`;
+}
+
+async function refreshBoardsManager() {
+  const matchId = Number(els.windowMatch?.value);
+  state.selectedMatchId = matchId || null;
+  if (!els.boardsManager) return;
+  if (!matchId) {
+    els.boardsManager.innerHTML = '<p class="muted">Sélectionne un match pour voir les 5 échiquiers.</p>';
     return;
   }
-  showToast('⏳ Import des parties en cours...');
-  const { data, error } = await supabase.functions.invoke('sync-chess-games', {
-    body: { match_id: Number(els.windowMatch.value), max_games_per_board: 4 },
-  });
-  if (error) return setAdminState(`❌ Erreur import parties: ${error.message}`, true);
-  const imported = Number(data?.imported_games ?? 0);
-  const skippedBoards = Number(data?.skipped_boards ?? 0);
-  showToast(`✅ Parties importées (${imported})${skippedBoards ? ` · échiquiers ignorés: ${skippedBoards}` : ''}`);
-  if (Array.isArray(data?.board_errors) && data.board_errors.length) {
-    setAdminState(`⚠️ ${data.board_errors.join(' | ')}`, true);
+  const { data: match, error: matchError } = await supabase
+    .from('matches')
+    .select('id,team_a_id,team_b_id,scheduled_at,match_started_at,match_ended_at,team_a:teams!matches_team_a_id_fkey(name),team_b:teams!matches_team_b_id_fkey(name)')
+    .eq('id', matchId).single();
+  if (matchError) return void (els.boardsManager.innerHTML = `<p class="muted">❌ ${matchError.message}</p>`);
+  const { data: boards } = await supabase.from('match_boards')
+    .select('id,board_no,player_a_id,player_b_id,game_points_a,game_points_b,board_points_a,board_points_b')
+    .eq('match_id', matchId).order('board_no');
+  const normalizedBoards = (boards || []).length ? boards : [1, 2, 3, 4, 5].map((n) => ({ board_no: n }));
+  state.matchBoards = normalizedBoards;
+  const teamIds = [match.team_a_id, match.team_b_id].filter(Boolean);
+  const { data: roster } = await supabase.from('players')
+    .select('id,display_name,chess_username,team_id,is_captain')
+    .in('team_id', teamIds)
+    .order('is_captain', { ascending: false }).order('display_name');
+  const playersByTeam = new Map();
+  for (const t of teamIds) playersByTeam.set(t, []);
+  for (const p of roster || []) playersByTeam.get(p.team_id)?.push(p);
+  const { data: games } = await supabase.from('games')
+    .select('id,board_no,white_username,black_username,result,played_at,excluded')
+    .eq('match_id', matchId).order('played_at');
+  const gamesByBoard = new Map();
+  for (let n = 1; n <= 5; n += 1) gamesByBoard.set(n, []);
+  for (const g of games || []) gamesByBoard.get(g.board_no)?.push(g);
+  els.boardsManager.innerHTML = `<div class="boards-grid">${normalizedBoards.map((board) => renderBoardCard(
+    board,
+    playersByTeam.get(match.team_a_id) || [],
+    playersByTeam.get(match.team_b_id) || [],
+    gamesByBoard.get(board.board_no) || [],
+    match,
+  )).join('')}</div>`;
+  for (const form of els.boardsManager.querySelectorAll('[data-pairing-form]')) {
+    if (form.elements.player_a_id) form.elements.player_a_id.value = form.closest('.board-card') ? String((normalizedBoards.find((b) => Number(b.board_no) === Number(form.dataset.boardNo))?.player_a_id || '')) : '';
+    if (form.elements.player_b_id) form.elements.player_b_id.value = form.closest('.board-card') ? String((normalizedBoards.find((b) => Number(b.board_no) === Number(form.dataset.boardNo))?.player_b_id || '')) : '';
+    form.addEventListener('submit', onSavePairing);
   }
+  for (const btn of els.boardsManager.querySelectorAll('[data-import-board]')) btn.addEventListener('click', onImportBoard);
+  for (const btn of els.boardsManager.querySelectorAll('[data-clear-board]')) btn.addEventListener('click', onClearBoard);
+}
+
+async function onSavePairing(e) {
+  e.preventDefault();
+  if (!(await requireAuthenticatedAdminAction())) return;
+  const form = e.currentTarget;
+  const matchId = Number(form.dataset.matchId);
+  const boardNo = Number(form.dataset.boardNo);
+  const playerAId = form.elements.player_a_id.value ? Number(form.elements.player_a_id.value) : null;
+  const playerBId = form.elements.player_b_id.value ? Number(form.elements.player_b_id.value) : null;
+  if (playerAId && playerBId && playerAId === playerBId) return void showToast('⚠️ Les deux joueurs doivent être différents.', true);
+  const { error } = await supabase.from('match_boards').update({ player_a_id: playerAId, player_b_id: playerBId }).eq('match_id', matchId).eq('board_no', boardNo);
+  if (error) return setAdminState(`❌ ${error.message}`, true);
+  showToast(`✅ Appariement échiquier ${boardNo} enregistré`);
+  await refreshBoardsManager();
+}
+
+async function onImportBoard(e) {
+  if (!(await requireAuthenticatedAdminAction())) return;
+  const btn = e.currentTarget;
+  const matchId = Number(btn.dataset.matchId);
+  const boardNo = Number(btn.dataset.boardNo);
+  btn.disabled = true;
+  btn.textContent = '⏳ Import...';
+  const { data, error } = await supabase.functions.invoke('sync-chess-games', {
+    body: { match_id: matchId, board_no: boardNo, max_games: 4, time_class: 'rapid' },
+  });
+  if (error || !data?.ok) {
+    setAdminState(`❌ ${error?.message || data?.error || 'Import échoué'}`, true);
+    btn.disabled = false;
+    btn.textContent = '⬇️ Importer parties';
+    return;
+  }
+  const n = Number(data.imported_games || 0);
+  showToast(n > 0 ? `✅ ${n} partie(s) importée(s)` : '⚠️ Aucune partie trouvée dans la fenêtre', n === 0);
+  await refreshBoardsManager();
   await loadAdminGames();
   await loadPublic();
-});
+}
+
+async function onClearBoard(e) {
+  if (!(await requireAuthenticatedAdminAction())) return;
+  const btn = e.currentTarget;
+  const matchId = Number(btn.dataset.matchId);
+  const boardNo = Number(btn.dataset.boardNo);
+  if (!window.confirm(`Supprimer toutes les parties de l'échiquier ${boardNo} ?`)) return;
+  const { error } = await supabase.from('games').delete().eq('match_id', matchId).eq('board_no', boardNo);
+  if (error) return setAdminState(`❌ ${error.message}`, true);
+  await supabase.rpc('recompute_match_scores', { p_match_id: matchId });
+  showToast('🗑️ Parties supprimées');
+  await refreshBoardsManager();
+  await loadAdminGames();
+  await loadPublic();
+}
 
 els.overrideForm.addEventListener('submit', async (e) => {
   e.preventDefault();

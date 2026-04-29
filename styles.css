@@ -455,3 +455,36 @@ footer { margin-top: var(--space-3); border-top: 1px solid var(--card-border); p
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* === Boards manager === */
+.boards-manager { display: grid; gap: 12px; }
+.boards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+}
+.board-card {
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+.board-card.has-pairing { border-color: rgba(53, 210, 172, 0.3); }
+.board-card.no-pairing { border-color: rgba(245, 180, 59, 0.25); }
+.board-card-head {
+  display: flex; justify-content: space-between; align-items: center;
+  border-bottom: 1px solid var(--card-border); padding-bottom: 6px;
+}
+.board-card-head h5 { font-family: var(--font-display); font-size: 0.95rem; margin: 0; }
+.board-pairing { display: grid; gap: 8px; }
+.board-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.board-actions .btn { font-size: 0.78rem; padding: 8px 10px; }
+.board-actions .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.board-games { border-top: 1px dashed var(--card-border); padding-top: 8px; font-size: 0.82rem; }
+.board-games ul { list-style: none; padding: 0; margin: 4px 0; display: grid; gap: 3px; }
+.board-games li {
+  font-size: 0.78rem; color: var(--text-muted);
+  border-left: 2px solid var(--accent); padding-left: 8px;
+}
