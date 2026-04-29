@@ -56,7 +56,7 @@ Deno.serve(async (req) => {
       const u2 = b?.player_b?.chess_username?.trim();
       if (!u1 || !u2) {
         report.skipped_boards += 1;
-        report.board_errors.push(`Board ${b.board_no}: joueurs manquants`);
+        report.board_errors.push(`Confrontation incomplète: ${u1 || 'joueur_A_manquant'} vs ${u2 || 'joueur_B_manquant'}`);
         continue;
       }
 
