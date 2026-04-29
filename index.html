@@ -11,7 +11,7 @@
     <meta name="theme-color" content="#080c18" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Syne:wght@500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -240,22 +240,67 @@
           <div id="admin-rosters" class="table-wrap" style="margin-top:1rem"></div>
         </article>
 
-        <article class="card admin-module danger-zone">
-          <div class="module-head">
-            <h3>Override score de match</h3>
-            <p class="muted">Force un score validé manuellement pour un match.</p>
-          </div>
-          <form id="override-form" class="grid three">
-            <label>Match<select id="override-match"></select></label>
-            <label>Score équipe A<input id="override-score-a" type="number" min="0" max="5" step="0.5" required /></label>
-            <label>Score équipe B<input id="override-score-b" type="number" min="0" max="5" step="0.5" required /></label>
-            <label>Diff. buts A<input id="override-goal-a" type="number" required /></label>
-            <label>Diff. buts B<input id="override-goal-b" type="number" required /></label>
-            <button type="submit" class="btn danger-btn" style="align-self:flex-end">Appliquer</button>
-          </form>
-        </article>
-
+        
         <article class="card admin-module">
+          <div class="module-head">
+            <h3>Saisie des résultats</h3>
+            <p class="muted">Sélectionne un match, ajuste l'appariement si besoin, puis saisis les points de chaque échiquier.</p>
+          </div>
+
+          <div class="results-controls">
+            <label>
+              Match à éditer
+              <select id="results-match"></select>
+            </label>
+            <label>
+              Date du match
+              <input type="datetime-local" id="results-scheduled-at" />
+            </label>
+            <label>
+              Statut
+              <select id="results-status">
+                <option value="scheduled">À venir</option>
+                <option value="live">En cours</option>
+                <option value="finished">Terminé</option>
+                <option value="validated">Validé</option>
+              </select>
+            </label>
+          </div>
+
+          <div id="results-pairing-warning" class="pairing-warning" hidden></div>
+
+          <div id="results-boards" class="results-boards">
+            <p class="muted">Sélectionne un match pour saisir les résultats.</p>
+          </div>
+
+          <div id="results-summary" class="results-summary" hidden>
+            <div class="summary-scoreboard">
+              <div class="summary-team">
+                <small>Équipe A</small>
+                <span id="summary-team-a-name">—</span>
+              </div>
+              <div class="summary-score">
+                <span id="summary-score-a">0</span>
+                <em>·</em>
+                <span id="summary-score-b">0</span>
+              </div>
+              <div class="summary-team summary-team-right">
+                <small>Équipe B</small>
+                <span id="summary-team-b-name">—</span>
+              </div>
+            </div>
+            <div class="summary-meta">
+              <span>Diff. A: <strong id="summary-diff-a">0</strong></span>
+              <span>Diff. B: <strong id="summary-diff-b">0</strong></span>
+              <span>Échiquiers complétés: <strong id="summary-progress">0/5</strong></span>
+            </div>
+            <div class="summary-actions">
+              <button type="button" class="btn ghost" id="results-reset">↺ Réinitialiser</button>
+              <button type="button" class="btn primary" id="results-save">💾 Enregistrer les résultats</button>
+            </div>
+          </div>
+        </article>
+<article class="card admin-module">
           <div class="module-head">
             <h3>Actions tournoi</h3>
             <p class="muted">Synchronisation et rafraîchissement des données du tournoi.</p>
@@ -288,48 +333,6 @@
           <button id="bulk-create-pool-matches" class="btn ghost" style="margin-top:0.6rem">
             ⚙️ Générer toutes les rencontres de poule manquantes
           </button>
-        </article>
-
-        <article class="card admin-module">
-          <div class="module-head">
-            <h3>Planifier un match</h3>
-            <p class="muted">Définis date, statut et fenêtre temporelle pour borner l'import.</p>
-          </div>
-          <form id="schedule-form" class="grid three" style="margin-bottom:1rem">
-            <label>Match<select id="schedule-match"></select></label>
-            <label>Date & heure<input type="datetime-local" id="schedule-at" required /></label>
-            <label>Statut
-              <select id="schedule-status">
-                <option value="scheduled">À venir</option>
-                <option value="live">En cours</option>
-                <option value="finished">Terminé</option>
-              </select>
-            </label>
-            <label>Début fenêtre import (optionnel)<input type="datetime-local" id="schedule-window-start" /></label>
-            <label>Fin fenêtre import (optionnel)<input type="datetime-local" id="schedule-window-end" /></label>
-            <button type="submit" class="btn primary" style="align-self:flex-end">📅 Enregistrer</button>
-          </form>
-          <p class="muted" style="font-size:0.78rem">
-            💡 Si la fenêtre n'est pas définie, l'import prend de <strong>scheduled_at - 1h</strong> à <strong>scheduled_at + 12h</strong>.
-          </p>
-        </article>
-
-        <article class="card admin-module">
-          <div class="module-head">
-            <h3>Import parties Chess.com</h3>
-            <p class="muted">1) Choisis un match. 2) Définis l'appariement. 3) Importe les parties par échiquier.</p>
-          </div>
-
-          <label style="display:block;margin-bottom:1rem;max-width:480px">
-            Match à gérer
-            <select id="window-match"></select>
-          </label>
-
-          <div id="boards-manager" class="boards-manager">
-            <p class="muted">Sélectionne un match pour voir les 5 échiquiers.</p>
-          </div>
-
-          <div id="admin-games" class="table-wrap" style="margin-top:1rem"></div>
         </article>
       </section>
     </main>
