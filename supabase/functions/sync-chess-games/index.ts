@@ -17,6 +17,10 @@ function toScore(result: string) {
   return 0;
 }
 
+function monthPath(date: Date) {
+  return `${date.getUTCFullYear()}/${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
 Deno.serve(async (req) => {
   try {
     if (req.method === 'OPTIONS') {
@@ -36,7 +40,6 @@ Deno.serve(async (req) => {
       return Response.json({ ok: false, error: 'match_id manquant ou invalide' }, { status: 400, headers: corsHeaders });
     }
 
-    const { data: windows } = await supabase.from('board_windows').select('*').eq('match_id', match_id);
     const { data: boards } = await supabase
       .from('match_boards')
       .select('board_no,player_a:players!match_boards_player_a_id_fkey(chess_username),player_b:players!match_boards_player_b_id_fkey(chess_username)')
@@ -48,35 +51,29 @@ Deno.serve(async (req) => {
       board_errors: [] as string[],
     };
 
-    for (const w of windows ?? []) {
-      const b = boards?.find((x) => x.board_no === w.board_no);
+    for (const b of boards ?? []) {
       const u1 = b?.player_a?.chess_username?.trim();
       const u2 = b?.player_b?.chess_username?.trim();
       if (!u1 || !u2) {
         report.skipped_boards += 1;
-        report.board_errors.push(`Board ${w.board_no}: joueurs manquants`);
+        report.board_errors.push(`Board ${b.board_no}: joueurs manquants`);
         continue;
-      }
-
-      const start = new Date(w.start_at);
-      const end = new Date(w.end_at);
-      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
-        report.skipped_boards += 1;
-        report.board_errors.push(`Board ${w.board_no}: fenêtre invalide`);
-        continue;
-      }
-
-      const monthPaths: string[] = [];
-      const cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
-      while (cursor <= end) {
-        monthPaths.push(`${cursor.getUTCFullYear()}/${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`);
-        cursor.setUTCMonth(cursor.getUTCMonth() + 1);
       }
 
       const archives: any[] = [];
-      for (const monthPath of monthPaths) {
+      const seenFetchKeys = new Set<string>();
+      const current = new Date();
+      const monthsToScan = Math.max(2, maxGamesPerBoard);
+
+      for (let i = 0; i < monthsToScan; i += 1) {
+        const d = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth() - i, 1));
+        const path = monthPath(d);
+
         for (const username of [u1.toLowerCase(), u2.toLowerCase()]) {
-          const r = await fetch(`https://api.chess.com/pub/player/${username}/games/${monthPath}`);
+          const key = `${username}/${path}`;
+          if (seenFetchKeys.has(key)) continue;
+          seenFetchKeys.add(key);
+          const r = await fetch(`https://api.chess.com/pub/player/${username}/games/${path}`);
           if (!r.ok) continue;
           const archive = await r.json();
           archives.push(...(archive.games || []));
@@ -92,17 +89,16 @@ Deno.serve(async (req) => {
       const games = dedupedGames
         .filter((g: any) => g.time_class === 'rapid')
         .filter((g: any) => {
-          const ts = new Date((g.end_time || 0) * 1000);
-          if (Number.isNaN(ts.getTime())) return false;
           const white = g.white?.username?.toLowerCase();
           const black = g.black?.username?.toLowerCase();
-          const inPair =
+          return (
             (white === u1.toLowerCase() && black === u2.toLowerCase()) ||
-            (white === u2.toLowerCase() && black === u1.toLowerCase());
-          return inPair && ts >= start && ts <= end;
+            (white === u2.toLowerCase() && black === u1.toLowerCase())
+          );
         })
-        .sort((a: any, b: any) => a.end_time - b.end_time)
-        .slice(0, maxGamesPerBoard);
+        .sort((a: any, b: any) => b.end_time - a.end_time)
+        .slice(0, maxGamesPerBoard)
+        .sort((a: any, b: any) => a.end_time - b.end_time);
 
       let gpA = 0;
       let gpB = 0;
@@ -119,7 +115,7 @@ Deno.serve(async (req) => {
 
         const { error: upsertError } = await supabase.from('games').upsert({
           match_id,
-          board_no: w.board_no,
+          board_no: b.board_no,
           played_at: new Date(g.end_time * 1000).toISOString(),
           white_username: white,
           black_username: black,
@@ -137,16 +133,20 @@ Deno.serve(async (req) => {
 
       report.imported_games += games.length;
 
+      const isCaptainBoard = Number(b.board_no) === 1;
+      const winPoints = isCaptainBoard ? 2 : 1;
+      const drawPoints = isCaptainBoard ? 1 : 0.5;
+
       await supabase
         .from('match_boards')
         .update({
           game_points_a: gpA,
           game_points_b: gpB,
-          board_points_a: gpA > gpB ? 1 : gpA === gpB ? 0.5 : 0,
-          board_points_b: gpB > gpA ? 1 : gpA === gpB ? 0.5 : 0,
+          board_points_a: gpA > gpB ? winPoints : gpA === gpB ? drawPoints : 0,
+          board_points_b: gpB > gpA ? winPoints : gpA === gpB ? drawPoints : 0,
         })
         .eq('match_id', match_id)
-        .eq('board_no', w.board_no);
+        .eq('board_no', b.board_no);
     }
 
     await supabase.rpc('recompute_match_scores', { p_match_id: match_id });
