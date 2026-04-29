@@ -118,6 +118,27 @@ function updatePlayersSortLabels() {
   if (peak) peak.textContent = `Peak ${label.toLowerCase()} ↓`;
 }
 
+function populateMatchSelectors(matches = []) {
+  const hasMatches = matches.length > 0;
+  const options = hasMatches
+    ? matches.map((m) => `<option value="${m.id}">${m.phase} - ${m.team_a?.name || '?'} vs ${m.team_b?.name || '?'}</option>`)
+    : ['<option value="">Aucun match disponible (crée/génère les matchs d’abord)</option>'];
+  const markup = options.join('');
+
+  if (els.windowMatch) {
+    els.windowMatch.innerHTML = markup;
+    els.windowMatch.disabled = !hasMatches;
+  }
+  if (els.overrideMatch) {
+    els.overrideMatch.innerHTML = markup;
+    els.overrideMatch.disabled = !hasMatches;
+  }
+  if (els.scheduleMatch) {
+    els.scheduleMatch.innerHTML = markup;
+    els.scheduleMatch.disabled = !hasMatches;
+  }
+}
+
 const setAdminState = (message, isError = false) => {
   els.authState.textContent = message;
   els.authState.style.color = isError ? '#ff8a8a' : '';
@@ -444,10 +465,7 @@ async function loadPublic() {
   els.playersTeamFilter.innerHTML = teamFilterOptions.join('');
   const options = [`<option value="">Pool joueurs disponibles (sans équipe)</option>`, ...teams.map((t) => `<option value="${t.team_id}">${t.team_name}</option>`)].join('');
   els.playerTeam.innerHTML = options;
-  const matchOptions = (matches || []).map((m) => `<option value="${m.id}">${m.phase} - ${m.team_a?.name || '?'} vs ${m.team_b?.name || '?'}</option>`).join('');
-  els.windowMatch.innerHTML = matchOptions;
-  els.overrideMatch.innerHTML = matchOptions;
-  if (els.scheduleMatch) els.scheduleMatch.innerHTML = matchOptions;
+  populateMatchSelectors(matches || []);
   renderTeamDnD(teams || [], players || []);
   renderAdminRosters(teams || [], players || []);
   renderTeamShowcase(teams || [], players || []);
