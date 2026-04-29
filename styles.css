@@ -515,3 +515,77 @@ footer { margin-top: var(--space-3); border-top: 1px solid var(--card-border); p
   font-size: 0.85rem;
 }
 .pairing-warning ul { margin: 4px 0 0 18px; padding: 0; }
+
+.results-boards {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.result-board-row {
+  display: grid;
+  grid-template-columns: 60px minmax(220px, 1fr) auto minmax(220px, 1fr) 110px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.rb-board {
+  font-weight: 800;
+  color: var(--brand);
+  font-family: var(--font-display);
+}
+
+.rb-player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.rb-player img {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  object-fit: cover;
+  border: 1px solid var(--card-border);
+}
+.rb-side-b { justify-content: flex-end; }
+
+.rb-scores-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(10, 18, 32, 0.65);
+  border: 1px solid var(--card-border);
+  border-radius: 999px;
+  padding: 6px 8px;
+}
+.rb-scores-inline input {
+  width: 58px;
+  text-align: center;
+  font-weight: 700;
+}
+.rb-result {
+  font-weight: 700;
+  text-align: right;
+}
+.rb-result.win-a, .result-board-row.win-a .rb-result { color: var(--success); }
+.rb-result.win-b, .result-board-row.win-b .rb-result { color: var(--danger); }
+.rb-result.draw, .result-board-row.draw .rb-result { color: var(--warning); }
+.rb-result.pending, .result-board-row.pending .rb-result { color: var(--text-dim); }
+
+@media (max-width: 980px) {
+  .result-board-row {
+    grid-template-columns: 44px 1fr;
+    gap: 8px;
+  }
+  .rb-scores-inline,
+  .rb-side-b,
+  .rb-result {
+    grid-column: 2;
+  }
+  .rb-side-b { justify-content: flex-start; }
+  .rb-result { text-align: left; }
+}

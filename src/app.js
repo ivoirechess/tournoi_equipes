@@ -920,12 +920,200 @@ function renderAdminRosters(teams, players) {
 }
 
 
-function computeBoardLive(score, boardNo) { const a=score.game_points_a; const b=score.game_points_b; if(a==null||b==null||(a===0&&b===0)) return {status:'pending',a:null,b:null,label:'En attente'}; if(a>b) return {status:'win-a',a:boardNo===1?2:1,b:0,label:'Victoire A'}; if(b>a) return {status:'win-b',a:0,b:boardNo===1?2:1,label:'Victoire B'}; const d=boardNo===1?1:0.5; return {status:'draw',a:d,b:d,label:'Nul'}; }
-async function loadResultsForMatch(matchId){ if(!matchId){els.resultsBoards.innerHTML='<p class="muted">Sélectionne un match pour saisir les résultats.</p>'; els.resultsSummary.hidden=true; state.resultsContext=null; return;} const {data:match}=await supabase.from('matches').select('id,team_a_id,team_b_id,scheduled_at,status,team_a:teams!matches_team_a_id_fkey(name),team_b:teams!matches_team_b_id_fkey(name)').eq('id',matchId).single(); const {data:boards}=await supabase.from('match_boards').select('board_no,player_a_id,player_b_id,game_points_a,game_points_b').eq('match_id',matchId).order('board_no'); const {data:roster}=await supabase.from('players').select('id,display_name,team_id,is_captain,rapid_rating,blitz_rating,bullet_rating,peak_rapid,peak_blitz,peak_bullet').in('team_id',[match.team_a_id,match.team_b_id]); const byTeam=new Map([[match.team_a_id,[]],[match.team_b_id,[]]]); (roster||[]).forEach(p=>byTeam.get(p.team_id)?.push(p)); const auto=computeAutoPairing(byTeam.get(match.team_a_id)||[],byTeam.get(match.team_b_id)||[],selectedCadence()); const bmap=new Map((boards||[]).map(b=>[b.board_no,b])); const pairing=[1,2,3,4,5].map(n=>{const a=auto.boards.find(x=>x.board_no===n);const d=bmap.get(n)||{}; return {board_no:n,player_a_id:d.player_a_id||a?.player_a_id||null,player_b_id:d.player_b_id||a?.player_b_id||null};}); state.resultsContext={match,pairing,scores:[1,2,3,4,5].map(n=>({board_no:n,game_points_a:bmap.get(n)?.game_points_a??null,game_points_b:bmap.get(n)?.game_points_b??null})),playersById:new Map((roster||[]).map(p=>[p.id,p]))}; els.resultsScheduledAt.value=match.scheduled_at?new Date(match.scheduled_at).toISOString().slice(0,16):''; els.resultsStatus.value=match.status||'scheduled'; els.resultsSummary.hidden=false; els.summaryTeamAName.textContent=match.team_a?.name||'A'; els.summaryTeamBName.textContent=match.team_b?.name||'B'; renderResultsBoards(); }
-function renderResultsBoards(){const ctx=state.resultsContext; if(!ctx) return; let sa=0,sb=0,d=0,c=0; els.resultsBoards.innerHTML=ctx.pairing.map(p=>{const s=ctx.scores.find(x=>x.board_no===p.board_no); const l=computeBoardLive(s,p.board_no); sa+=Number(l.a||0); sb+=Number(l.b||0); if(s.game_points_a!=null&&s.game_points_b!=null){d+=s.game_points_a-s.game_points_b;c++;} const pa=ctx.playersById.get(p.player_a_id); const pb=ctx.playersById.get(p.player_b_id); return `<article class="result-board-card ${l.status}"><div class="rb-head"><h5>ÉCHIQUIER ${p.board_no}</h5></div><div class="rb-pairing"><div class="rb-side rb-side-a"><strong>${pa?.display_name||'—'}</strong></div><div class="rb-vs">VS</div><div class="rb-side rb-side-b"><strong>${pb?.display_name||'—'}</strong></div></div><div class="rb-scores"><label>A<input data-a="${p.board_no}" type="number" step="0.5" min="0" max="4" value="${s.game_points_a??''}"></label><span class="rb-score-sep">:</span><label>B<input data-b="${p.board_no}" type="number" step="0.5" min="0" max="4" value="${s.game_points_b??''}"></label></div><div class="rb-result ${l.status}">${l.label}</div></article>`;}).join(''); els.summaryScoreA.textContent=String(sa); els.summaryScoreB.textContent=String(sb); els.summaryDiffA.textContent=String(Math.round(d)); els.summaryDiffB.textContent=String(-Math.round(d)); els.summaryProgress.textContent=`${c}/5`;}
-els.resultsBoards?.addEventListener('input',(e)=>{const t=e.target; if(!(t instanceof HTMLInputElement)||!state.resultsContext)return; const n=Number(t.dataset.a||t.dataset.b); const s=state.resultsContext.scores.find(x=>x.board_no===n); if(!s)return; const v=t.value===''?null:Number(t.value); if(t.dataset.a)s.game_points_a=Number.isNaN(v)?null:v; if(t.dataset.b)s.game_points_b=Number.isNaN(v)?null:v; renderResultsBoards();});
-els.resultsMatch?.addEventListener('change',(e)=>loadResultsForMatch(String(e.target.value || '')));
-els.resultsSave?.addEventListener('click', async()=>{if(!(await requireAuthenticatedAdminAction()))return; const ctx=state.resultsContext; if(!ctx)return; for(const p of ctx.pairing){await supabase.from('match_boards').update({player_a_id:p.player_a_id,player_b_id:p.player_b_id}).eq('match_id',ctx.match.id).eq('board_no',p.board_no);} for(const s of ctx.scores){await supabase.from('match_boards').update({game_points_a:s.game_points_a,game_points_b:s.game_points_b}).eq('match_id',ctx.match.id).eq('board_no',s.board_no);} await supabase.from('matches').update({scheduled_at:els.resultsScheduledAt.value?new Date(els.resultsScheduledAt.value).toISOString():null,status:els.resultsStatus.value||'validated'}).eq('id',ctx.match.id); await supabase.rpc('recompute_match_scores',{p_match_id:ctx.match.id}); showToast('✅ Résultats enregistrés'); await loadPublic();});
+function computeBoardLive(score, boardNo) {
+  const a = score.game_points_a;
+  const b = score.game_points_b;
+  if (a == null || b == null || (a === 0 && b === 0)) return { status: 'pending', a: null, b: null, label: 'En attente' };
+  if (a > b) return { status: 'win-a', a: boardNo === 1 ? 2 : 1, b: 0, label: 'Victoire A' };
+  if (b > a) return { status: 'win-b', a: 0, b: boardNo === 1 ? 2 : 1, label: 'Victoire B' };
+  const d = boardNo === 1 ? 1 : 0.5;
+  return { status: 'draw', a: d, b: d, label: 'Nul' };
+}
+
+function getPlayerAvatar(player) {
+  if (!player) return 'https://placehold.co/64x64/1c2337/e9f0ff?text=%E2%99%9F';
+  if (player.chess_username) return `https://images.chesscomfiles.com/uploads/v1/user/${encodeURIComponent(player.chess_username)}/avatar.jpg`;
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(player.display_name || 'Joueur')}&background=1c2337&color=e9f0ff&size=64`;
+}
+
+function getCompletedBoards(scores) {
+  return scores.filter((s) => s.game_points_a != null && s.game_points_b != null).length;
+}
+
+async function loadResultsForMatch(matchId) {
+  if (!matchId) {
+    els.resultsBoards.innerHTML = '<p class="muted">Sélectionne un match pour saisir les résultats.</p>';
+    els.resultsSummary.hidden = true;
+    state.resultsContext = null;
+    return;
+  }
+
+  const { data: match } = await supabase
+    .from('matches')
+    .select('id,team_a_id,team_b_id,scheduled_at,status,team_a:teams!matches_team_a_id_fkey(name),team_b:teams!matches_team_b_id_fkey(name)')
+    .eq('id', matchId)
+    .single();
+
+  const { data: boards } = await supabase
+    .from('match_boards')
+    .select('board_no,player_a_id,player_b_id,game_points_a,game_points_b')
+    .eq('match_id', matchId)
+    .order('board_no');
+
+  const { data: roster } = await supabase
+    .from('players')
+    .select('id,display_name,chess_username,team_id,is_captain,rapid_rating,blitz_rating,bullet_rating,peak_rapid,peak_blitz,peak_bullet')
+    .in('team_id', [match.team_a_id, match.team_b_id]);
+
+  const byTeam = new Map([[match.team_a_id, []], [match.team_b_id, []]]);
+  (roster || []).forEach((player) => byTeam.get(player.team_id)?.push(player));
+
+  const auto = computeAutoPairing(byTeam.get(match.team_a_id) || [], byTeam.get(match.team_b_id) || [], selectedCadence());
+  const bmap = new Map((boards || []).map((board) => [board.board_no, board]));
+
+  const pairing = [1, 2, 3, 4, 5].map((n) => {
+    const autoBoard = auto.boards.find((x) => x.board_no === n);
+    const stored = bmap.get(n) || {};
+    return {
+      board_no: n,
+      player_a_id: stored.player_a_id || autoBoard?.player_a_id || null,
+      player_b_id: stored.player_b_id || autoBoard?.player_b_id || null,
+    };
+  });
+
+  state.resultsContext = {
+    match,
+    pairing,
+    scores: [1, 2, 3, 4, 5].map((n) => ({
+      board_no: n,
+      game_points_a: bmap.get(n)?.game_points_a ?? null,
+      game_points_b: bmap.get(n)?.game_points_b ?? null,
+    })),
+    playersById: new Map((roster || []).map((player) => [player.id, player])),
+  };
+
+  els.resultsScheduledAt.value = match.scheduled_at ? new Date(match.scheduled_at).toISOString().slice(0, 16) : '';
+  els.resultsStatus.value = match.status || 'scheduled';
+  els.resultsSummary.hidden = false;
+  els.summaryTeamAName.textContent = match.team_a?.name || 'A';
+  els.summaryTeamBName.textContent = match.team_b?.name || 'B';
+  renderResultsBoards();
+}
+
+function renderResultsBoards() {
+  const ctx = state.resultsContext;
+  if (!ctx) return;
+
+  let sa = 0;
+  let sb = 0;
+  let d = 0;
+  const completed = getCompletedBoards(ctx.scores);
+
+  els.resultsBoards.innerHTML = ctx.pairing
+    .map((pair) => {
+      const score = ctx.scores.find((x) => x.board_no === pair.board_no);
+      const live = computeBoardLive(score, pair.board_no);
+      sa += Number(live.a || 0);
+      sb += Number(live.b || 0);
+      if (score.game_points_a != null && score.game_points_b != null) d += score.game_points_a - score.game_points_b;
+
+      const playerA = ctx.playersById.get(pair.player_a_id);
+      const playerB = ctx.playersById.get(pair.player_b_id);
+      return `<article class="result-board-row ${live.status}">
+        <div class="rb-board">#${pair.board_no}</div>
+        <div class="rb-player rb-side-a">
+          <img src="${getPlayerAvatar(playerA)}" alt="Avatar ${playerA?.display_name || 'Joueur A'}" loading="lazy" onerror="this.onerror=null;this.src='https://placehold.co/64x64/1c2337/e9f0ff?text=%E2%99%9F';" />
+          <strong>${playerA?.display_name || '—'}</strong>
+        </div>
+        <div class="rb-scores-inline">
+          <input data-a="${pair.board_no}" type="number" step="0.5" min="0" max="4" value="${score.game_points_a ?? ''}" aria-label="Score joueur A échiquier ${pair.board_no}">
+          <span>:</span>
+          <input data-b="${pair.board_no}" type="number" step="0.5" min="0" max="4" value="${score.game_points_b ?? ''}" aria-label="Score joueur B échiquier ${pair.board_no}">
+        </div>
+        <div class="rb-player rb-side-b">
+          <strong>${playerB?.display_name || '—'}</strong>
+          <img src="${getPlayerAvatar(playerB)}" alt="Avatar ${playerB?.display_name || 'Joueur B'}" loading="lazy" onerror="this.onerror=null;this.src='https://placehold.co/64x64/1c2337/e9f0ff?text=%E2%99%9F';" />
+        </div>
+        <div class="rb-result ${live.status}">${live.label}</div>
+      </article>`;
+    })
+    .join('');
+
+  els.summaryScoreA.textContent = String(sa);
+  els.summaryScoreB.textContent = String(sb);
+  els.summaryDiffA.textContent = String(Math.round(d));
+  els.summaryDiffB.textContent = String(-Math.round(d));
+  els.summaryProgress.textContent = `${completed}/5`;
+}
+
+els.resultsBoards?.addEventListener('input', (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement) || !state.resultsContext) return;
+  const boardNo = Number(target.dataset.a || target.dataset.b);
+  const score = state.resultsContext.scores.find((x) => x.board_no === boardNo);
+  if (!score) return;
+
+  const value = target.value === '' ? null : Number(target.value);
+  if (target.dataset.a) score.game_points_a = Number.isNaN(value) ? null : value;
+  if (target.dataset.b) score.game_points_b = Number.isNaN(value) ? null : value;
+  renderResultsBoards();
+});
+
+els.resultsMatch?.addEventListener('change', (e) => loadResultsForMatch(String(e.target.value || '')));
+
+els.resultsReset?.addEventListener('click', async () => {
+  const ctx = state.resultsContext;
+  if (!ctx) return;
+
+  const reloadOnly = window.confirm('Réinitialiser les champs non sauvegardés ?');
+  if (reloadOnly) {
+    await loadResultsForMatch(String(ctx.match.id));
+    showToast('↺ Résultats rechargés depuis la base.');
+    return;
+  }
+
+  const hardReset = window.confirm('Effacer AUSSI les scores déjà enregistrés pour ce match ?');
+  if (!hardReset) return;
+  if (!(await requireAuthenticatedAdminAction())) return;
+
+  for (const pair of ctx.pairing) {
+    await supabase
+      .from('match_boards')
+      .update({ game_points_a: null, game_points_b: null, player_a_id: pair.player_a_id, player_b_id: pair.player_b_id })
+      .eq('match_id', ctx.match.id)
+      .eq('board_no', pair.board_no);
+  }
+
+  await supabase.from('matches').update({ status: 'scheduled' }).eq('id', ctx.match.id);
+  await supabase.rpc('recompute_match_scores', { p_match_id: ctx.match.id });
+  await loadPublic();
+  await loadResultsForMatch(String(ctx.match.id));
+  showToast('🧹 Scores supprimés pour ce match.');
+});
+
+els.resultsSave?.addEventListener('click', async () => {
+  if (!(await requireAuthenticatedAdminAction())) return;
+  const ctx = state.resultsContext;
+  if (!ctx) return;
+
+  for (const pair of ctx.pairing) {
+    await supabase.from('match_boards').update({ player_a_id: pair.player_a_id, player_b_id: pair.player_b_id }).eq('match_id', ctx.match.id).eq('board_no', pair.board_no);
+  }
+  for (const score of ctx.scores) {
+    await supabase.from('match_boards').update({ game_points_a: score.game_points_a, game_points_b: score.game_points_b }).eq('match_id', ctx.match.id).eq('board_no', score.board_no);
+  }
+
+  const autoStatus = getCompletedBoards(ctx.scores) === 5 ? 'validated' : (els.resultsStatus.value || 'scheduled');
+  await supabase.from('matches').update({
+    scheduled_at: els.resultsScheduledAt.value ? new Date(els.resultsScheduledAt.value).toISOString() : null,
+    status: autoStatus,
+  }).eq('id', ctx.match.id);
+
+  await supabase.rpc('recompute_match_scores', { p_match_id: ctx.match.id });
+  showToast('✅ Résultats enregistrés');
+  await loadPublic();
+  await loadResultsForMatch(String(ctx.match.id));
+});
 if (els.refreshPublic) els.refreshPublic.onclick = loadPublic;
 els.matchesTabs?.addEventListener('click', (event) => {
   const button = event.target.closest('[data-match-filter]');
