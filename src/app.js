@@ -24,6 +24,10 @@ const els = {
   syncElo: document.getElementById('sync-elo'),
   refreshPublic: document.getElementById('refresh-public'),
   windowForm: document.getElementById('window-form'),
+  scheduleForm: document.getElementById('schedule-form'),
+  scheduleMatch: document.getElementById('schedule-match'),
+  scheduleAt: document.getElementById('schedule-at'),
+  scheduleStatus: document.getElementById('schedule-status'),
   windowMatch: document.getElementById('window-match'),
   syncGames: document.getElementById('sync-games'),
   adminGames: document.getElementById('admin-games'),
@@ -381,10 +385,13 @@ async function loadPublic() {
     supabase.from('players').select('id,display_name,chess_username,is_captain,team_id,rapid_rating,blitz_rating,bullet_rating,peak_rapid,peak_blitz,peak_bullet,peak_global,avatar_url,chess_title,country_code,teams(name)').order('display_name'),
     supabase.from('teams').select('id,name,pool').order('name'),
   ]);
-  const firstError = matchesError || playersError || rawTeamsError;
+  const firstError = matchesError || rawTeamsError;
   if (firstError) {
     setAdminState(`❌ Chargement impossible: ${firstError.message}`, true);
     return;
+  }
+  if (playersError) {
+    showToast(`⚠️ Données joueurs indisponibles (${playersError.message})`, true);
   }
   if (standingsError) showToast(`⚠️ Classement via vue indisponible (${standingsError.message}) → mode secours actif.`, true);
   if (teamsError) showToast(`⚠️ Force équipe via vue indisponible (${teamsError.message}) → mode secours actif.`, true);
@@ -440,6 +447,7 @@ async function loadPublic() {
   const matchOptions = (matches || []).map((m) => `<option value="${m.id}">${m.phase} - ${m.team_a?.name || '?'} vs ${m.team_b?.name || '?'}</option>`).join('');
   els.windowMatch.innerHTML = matchOptions;
   els.overrideMatch.innerHTML = matchOptions;
+  if (els.scheduleMatch) els.scheduleMatch.innerHTML = matchOptions;
   renderTeamDnD(teams || [], players || []);
   renderAdminRosters(teams || [], players || []);
   renderTeamShowcase(teams || [], players || []);
@@ -944,6 +952,22 @@ els.syncElo?.addEventListener('click', async () => {
   const { error } = await supabase.functions.invoke('sync-player-stats');
   if (error) return setAdminState(`❌ Erreur sync ELO: ${error.message}`, true);
   showToast('✅ ELO Chess.com synchronisé');
+  await loadPublic();
+});
+
+els.scheduleForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!(await requireAuthenticatedAdminAction())) return;
+  const matchId = Number(els.scheduleMatch?.value);
+  if (!matchId) {
+    showToast('⚠️ Choisis un match à planifier.', true);
+    return;
+  }
+  const scheduledAt = els.scheduleAt?.value ? new Date(els.scheduleAt.value).toISOString() : null;
+  const status = els.scheduleStatus?.value || 'scheduled';
+  const { error } = await supabase.from('matches').update({ scheduled_at: scheduledAt, status }).eq('id', matchId);
+  if (error) return setAdminState(`❌ Planification impossible: ${error.message}`, true);
+  showToast('✅ Match planifié');
   await loadPublic();
 });
 

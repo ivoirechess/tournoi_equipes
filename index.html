@@ -271,6 +271,18 @@
             <h3>Import parties Chess.com</h3>
             <p class="muted">Définit les fenêtres de collecte et importe les parties automatiquement.</p>
           </div>
+          <form id="schedule-form" class="grid three" style="margin-bottom:1rem">
+            <label>Match<select id="schedule-match"></select></label>
+            <label>Date & heure<input type="datetime-local" id="schedule-at" required /></label>
+            <label>Statut
+              <select id="schedule-status">
+                <option value="scheduled">À venir</option>
+                <option value="live">En cours</option>
+                <option value="finished">Terminé</option>
+              </select>
+            </label>
+            <button type="submit" class="btn primary" style="align-self:flex-end">📅 Planifier le match</button>
+          </form>
           <form id="window-form" class="grid three" style="margin-bottom:1rem">
             <label>Match<select id="window-match"></select></label>
             <label>Échiquier #<input type="number" id="window-board" min="1" max="5" required /></label>
