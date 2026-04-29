@@ -50,7 +50,7 @@
             <span class="hero-meta">Finales & classement en direct</span>
           </div>
           <h1 id="hero-title">IvoireChess Team Championship — Champion en titre: <span>yoann565</span></h1>
-          <p class="hero-sub" id="hero-format-summary">Format: 6 équipes · 2 poules · 4 boards par match.</p>
+          <p class="hero-sub" id="hero-format-summary">Format: 6 équipes · 2 poules · 5 échiquiers par match (5-4-3 samedi 19h, 2-1 dimanche 19h).</p>
           <div id="hero-next-match" class="hero-featured-match card card-compact skeleton"></div>
           <div class="hero-actions">
             <a class="btn primary" href="#standings-section">Voir le classement</a>
@@ -66,11 +66,11 @@
           </div>
           <div class="kpi-card">
             <small>Prochain match</small>
-            <b id="hero-next-timer">À définir</b>
+            <b id="hero-next-timer">Calendrier terminé</b>
           </div>
           <div class="kpi-card">
             <small>Format</small>
-            <b>2 Pools · 4 Boards</b>
+            <b>2 Poules · 5 Échiquiers</b>
           </div>
         </div>
       </section>
@@ -247,8 +247,8 @@
           </div>
           <form id="override-form" class="grid three">
             <label>Match<select id="override-match"></select></label>
-            <label>Score équipe A<input id="override-score-a" type="number" min="0" max="4" step="0.5" required /></label>
-            <label>Score équipe B<input id="override-score-b" type="number" min="0" max="4" step="0.5" required /></label>
+            <label>Score équipe A<input id="override-score-a" type="number" min="0" max="5" step="0.5" required /></label>
+            <label>Score équipe B<input id="override-score-b" type="number" min="0" max="5" step="0.5" required /></label>
             <label>Diff. buts A<input id="override-goal-a" type="number" required /></label>
             <label>Diff. buts B<input id="override-goal-b" type="number" required /></label>
             <button type="submit" class="btn danger-btn" style="align-self:flex-end">Appliquer</button>
@@ -258,22 +258,12 @@
         <article class="card admin-module">
           <div class="module-head">
             <h3>Actions tournoi</h3>
-            <p class="muted">Pilote les étapes globales: tirage, playoffs, sync et refresh public.</p>
+            <p class="muted">Synchronisation et rafraîchissement des données du tournoi.</p>
           </div>
           <div class="grid four">
-            <button id="draw-groups">🎲 Tirer les poules</button>
-            <button id="generate-playoffs">🏆 Générer playoffs</button>
             <button id="sync-elo">⚡ Sync ELO Chess.com</button>
             <button id="refresh-public">🔄 Rafraîchir</button>
           </div>
-        </article>
-
-        <article class="card admin-module">
-          <div class="module-head">
-            <h3>Équilibrage automatique</h3>
-            <p class="muted">Suggestions de swaps (hors capitaines) pour rapprocher les forces d'équipes.</p>
-          </div>
-          <div id="swap-recommendations" class="table-wrap"></div>
         </article>
 
         <article class="card admin-module">
@@ -283,12 +273,12 @@
           </div>
           <form id="window-form" class="grid three" style="margin-bottom:1rem">
             <label>Match<select id="window-match"></select></label>
-            <label>Board #<input type="number" id="window-board" min="1" max="4" required /></label>
+            <label>Échiquier #<input type="number" id="window-board" min="1" max="5" required /></label>
             <label>Début<input type="datetime-local" id="window-start" required /></label>
             <label>Fin<input type="datetime-local" id="window-end" required /></label>
             <button type="submit" class="btn primary" style="align-self:flex-end">Enregistrer plage</button>
           </form>
-          <button id="sync-games" class="btn primary">⬇️ Importer les parties (max 4/board)</button>
+          <button id="sync-games" class="btn primary">⬇️ Importer les parties (max 4/échiquier)</button>
           <div id="admin-games" class="table-wrap" style="margin-top:1rem"></div>
         </article>
       </section>

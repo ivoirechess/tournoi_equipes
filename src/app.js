@@ -27,7 +27,6 @@ const els = {
   windowMatch: document.getElementById('window-match'),
   syncGames: document.getElementById('sync-games'),
   adminGames: document.getElementById('admin-games'),
-  swapRecommendations: document.getElementById('swap-recommendations'),
   playersTeamFilter: document.getElementById('players-team-filter'),
   playersSort: document.getElementById('players-sort'),
   tournamentCadence: document.getElementById('tournament-cadence'),
@@ -271,16 +270,16 @@ function findNextFeaturedMatch(matches) {
     return timestamp >= now && matchStatusCategory(match) === 'upcoming';
   });
   if (upcoming) return upcoming;
-  return sorted.find((match) => matchStatusCategory(match) === 'completed') || null;
+  return null;
 }
 
 function renderHeroAndSummary(standings, matches, teams) {
   const totalTeams = teams?.length || 0;
   const pools = new Set((teams || []).map((team) => team.pool).filter(Boolean));
-  const boards = 4;
+  const boards = 5;
   const featured = findNextFeaturedMatch(matches);
-  const featuredTeams = featured ? `${featured.team_a?.name || '?'} vs ${featured.team_b?.name || '?'}` : 'Match à confirmer';
-  const featuredDate = featured ? formatMatchDate(featured.scheduled_at) : 'Planning en cours';
+  const featuredTeams = featured ? `${featured.team_a?.name || '?'} vs ${featured.team_b?.name || '?'}` : 'Aucun match à venir';
+  const featuredDate = featured ? formatMatchDate(featured.scheduled_at) : 'Calendrier terminé';
   const hasLive = (matches || []).some((match) => matchStatusCategory(match) === 'live');
   const hasUpcoming = (matches || []).some((match) => matchStatusCategory(match) === 'upcoming');
   const status = hasLive ? 'live' : hasUpcoming ? 'scheduled' : 'finished';
@@ -293,27 +292,27 @@ function renderHeroAndSummary(standings, matches, teams) {
 
   if (els.heroStatus) {
     els.heroStatus.className = `status-badge status-${status}`;
-    els.heroStatus.textContent = status === 'live' ? 'LIVE' : status === 'scheduled' ? 'UPCOMING' : 'FINISHED';
+    els.heroStatus.textContent = status === 'live' ? 'EN COURS' : status === 'scheduled' ? 'À VENIR' : 'TERMINÉ';
   }
   if (els.heroFormatSummary) {
-    els.heroFormatSummary.textContent = `Format: ${totalTeams} équipes · ${Math.max(pools.size, 2)} poules · ${boards} boards par match.`;
+    els.heroFormatSummary.textContent = `Format: ${totalTeams} équipes · ${Math.max(pools.size, 2)} poules · ${boards} échiquiers par match (5-4-3 samedi 19h, 2-1 dimanche 19h).`;
   }
   if (els.heroNextMatch) {
     els.heroNextMatch.classList.remove('skeleton');
     els.heroNextMatch.innerHTML = `<article class="match-feature-card">
       <h4>Match en lumière</h4>
       <p class="teams">${featuredTeams}</p>
-      <p class="muted">${featuredDate} · ${featured ? matchStatusLabel(featured) : 'En attente'}</p>
+      <p class="muted">${featuredDate} · ${featured ? matchStatusLabel(featured) : 'Aucun match à venir'}</p>
     </article>`;
   }
   if (els.heroNextTimer) {
-    els.heroNextTimer.textContent = featured ? formatMatchDate(featured.scheduled_at) : 'À confirmer';
+    els.heroNextTimer.textContent = featured ? formatMatchDate(featured.scheduled_at) : 'Calendrier terminé';
   }
   if (els.summaryDashboard) {
     els.summaryDashboard.classList.remove('skeleton');
     els.summaryDashboard.innerHTML = `
-      <article class="stat-tile"><p class="stat-label">Leader Pool A</p><p class="stat-value">${leaderA?.team_name || 'TBD'}</p><p class="stat-context">${leaderA ? `${leaderA.points} pts · diff ${leaderA.goal_diff}` : 'Aucun score'}</p></article>
-      <article class="stat-tile"><p class="stat-label">Leader Pool B</p><p class="stat-value">${leaderB?.team_name || 'TBD'}</p><p class="stat-context">${leaderB ? `${leaderB.points} pts · diff ${leaderB.goal_diff}` : 'Aucun score'}</p></article>
+      <article class="stat-tile"><p class="stat-label">Leader Poule A</p><p class="stat-value">${leaderA?.team_name || '—'}</p><p class="stat-context">${leaderA ? `${leaderA.points} pts · diff ${leaderA.goal_diff}` : 'Aucun score'}</p></article>
+      <article class="stat-tile"><p class="stat-label">Leader Poule B</p><p class="stat-value">${leaderB?.team_name || '—'}</p><p class="stat-context">${leaderB ? `${leaderB.points} pts · diff ${leaderB.goal_diff}` : 'Aucun score'}</p></article>
       <article class="stat-tile"><p class="stat-label">Prochain match</p><p class="stat-value">${featuredTeams}</p><p class="stat-context">${featuredDate}</p></article>
       <article class="stat-tile"><p class="stat-label">Champion en titre</p><p class="stat-value">yoann565</p><p class="stat-context">Référence de la saison précédente</p></article>
     `;
@@ -321,7 +320,7 @@ function renderHeroAndSummary(standings, matches, teams) {
   if (els.featuredMatch) {
     els.featuredMatch.classList.remove('skeleton');
     els.featuredMatch.innerHTML = `<article class="match-feature-card">
-      <h4>Featured Match</h4>
+      <h4>Match en lumière</h4>
       <p class="teams">${featuredTeams}</p>
       <p class="muted">${featuredDate} · ${featured ? matchStatusLabel(featured) : 'À venir'}</p>
     </article>`;
@@ -443,7 +442,6 @@ async function loadPublic() {
   els.overrideMatch.innerHTML = matchOptions;
   renderTeamDnD(teams || [], players || []);
   renderAdminRosters(teams || [], players || []);
-  renderSwapRecommendations(teams || [], players || []);
   renderTeamShowcase(teams || [], players || []);
 }
 
@@ -755,31 +753,6 @@ function playerStrengthValue(player) {
   return Number(cadencePeak(player, selectedCadence()) || 0);
 }
 
-function computeTeamStrengths(teams, players) {
-  const totals = new Map();
-  const counts = new Map();
-  for (const team of teams) {
-    totals.set(team.team_id, 0);
-    counts.set(team.team_id, 0);
-  }
-  for (const player of players) {
-    if (!player.team_id || !totals.has(player.team_id)) continue;
-    totals.set(player.team_id, totals.get(player.team_id) + playerStrengthValue(player));
-    counts.set(player.team_id, counts.get(player.team_id) + 1);
-  }
-  return new Map(
-    teams.map((team) => {
-      return [team.team_id, totals.get(team.team_id) || 0];
-    }),
-  );
-}
-
-function imbalanceScore(strengthByTeam) {
-  const values = [...strengthByTeam.values()];
-  const avg = values.reduce((sum, value) => sum + value, 0) / Math.max(values.length, 1);
-  return values.reduce((sum, value) => sum + Math.abs(value - avg), 0);
-}
-
 async function loadClubIdentity() {
   if (!els.clubLogo) return;
   if (els.clubLogo.complete && els.clubLogo.naturalWidth > 0) {
@@ -803,49 +776,6 @@ async function loadClubIdentity() {
     },
     { once: true },
   );
-}
-
-function renderSwapRecommendations(teams, players) {
-  if (!els.swapRecommendations) return;
-  const teamNameById = new Map(teams.map((team) => [team.team_id, team.team_name]));
-  const byTeam = computeTeamStrengths(teams, players);
-  const currentImbalance = imbalanceScore(byTeam);
-  const movable = players.filter((player) => player.team_id && !player.is_captain);
-  const recommendations = [];
-
-  for (let i = 0; i < movable.length; i += 1) {
-    for (let j = i + 1; j < movable.length; j += 1) {
-      const a = movable[i];
-      const b = movable[j];
-      if (a.team_id === b.team_id) continue;
-      const simulated = new Map(byTeam);
-      const teamAPlayers = players.filter((p) => p.team_id === a.team_id).length || 1;
-      const teamBPlayers = players.filter((p) => p.team_id === b.team_id).length || 1;
-      const aValue = playerStrengthValue(a);
-      const bValue = playerStrengthValue(b);
-      simulated.set(a.team_id, simulated.get(a.team_id) + (bValue - aValue) / teamAPlayers);
-      simulated.set(b.team_id, simulated.get(b.team_id) + (aValue - bValue) / teamBPlayers);
-      const newImbalance = imbalanceScore(simulated);
-      const improvement = currentImbalance - newImbalance;
-      if (improvement <= 0) continue;
-      recommendations.push({
-        fromA: `${a.display_name} (${teamNameById.get(a.team_id)})`,
-        fromB: `${b.display_name} (${teamNameById.get(b.team_id)})`,
-        gain: improvement,
-      });
-    }
-  }
-
-  recommendations.sort((a, b) => b.gain - a.gain);
-  const best = recommendations.slice(0, 8);
-
-  if (!best.length) {
-    els.swapRecommendations.innerHTML = '<p>Aucun swap recommandé: les équipes semblent déjà équilibrées.</p>';
-    return;
-  }
-  els.swapRecommendations.innerHTML = `<table><thead><tr><th>Swap recommandé</th><th>Impact équilibre</th></tr></thead><tbody>${best
-    .map((swap) => `<tr><td>${swap.fromA} ⇄ ${swap.fromB}</td><td>+${swap.gain.toFixed(2)}</td></tr>`)
-    .join('')}</tbody></table>`;
 }
 
 function renderAdminRosters(teams, players) {
@@ -898,14 +828,18 @@ function renderAdminRosters(teams, players) {
 }
 
 async function loadAdminGames() {
-  const { data, error } = await supabase.from('games').select('id,match_id,board_no,played_at,white_username,black_username,result,excluded,game_url,pgn').order('played_at', { ascending: false }).limit(30);
+  const { data, error } = await supabase
+    .from('games')
+    .select('id,match_id,board_no,played_at,white_username,black_username,result,excluded,game_url,pgn,matches(team_a:teams!matches_team_a_id_fkey(name),team_b:teams!matches_team_b_id_fkey(name))')
+    .order('played_at', { ascending: false })
+    .limit(30);
   if (error) {
     setAdminState(`❌ Impossible de charger les parties: ${error.message}`, true);
   }
   state.adminGamesCache = new Map((data || []).map((g) => [g.id, g]));
-  els.adminGames.innerHTML = `<table><thead><tr><th>Board</th><th>Partie</th><th>Résultat</th><th>Exclure</th></tr></thead><tbody>${(data || [])
+  els.adminGames.innerHTML = `<table><thead><tr><th>Échiquier / Match</th><th>Partie</th><th>Résultat</th><th>Exclure</th></tr></thead><tbody>${(data || [])
     .map(
-      (g) => `<tr><td>M${g.match_id} / #${g.board_no}</td><td><a href="${g.game_url}" target="_blank" rel="noreferrer">${g.white_username} vs ${g.black_username}</a></td><td>${g.result}</td><td><div class="row-actions"><button data-exclude="${g.id}">${g.excluded ? 'Inclure' : 'Exclure'}</button></div></td></tr>`,
+      (g) => `<tr><td>Échiquier ${g.board_no} · ${g.matches?.team_a?.name || '?'} vs ${g.matches?.team_b?.name || '?'}</td><td><a href="${g.game_url}" target="_blank" rel="noreferrer">${g.white_username} vs ${g.black_username}</a></td><td>${g.result}</td><td><div class="row-actions"><button data-exclude="${g.id}">${g.excluded ? 'Inclure' : 'Exclure'}</button></div></td></tr>`,
     )
     .join('')}</tbody></table>`;
   for (const b of els.adminGames.querySelectorAll('[data-exclude]')) {
@@ -978,7 +912,8 @@ els.playerForm.addEventListener('submit', async (e) => {
   loadPublic();
 });
 
-els.drawGroups.onclick = async () => {
+if (els.drawGroups) {
+  els.drawGroups.onclick = async () => {
   if (!(await requireAuthenticatedAdminAction())) return;
   const { data: teams, error } = await supabase.from('teams').select('id');
   if (error) return setAdminState(`❌ Impossible de charger les équipes: ${error.message}`, true);
@@ -990,24 +925,27 @@ els.drawGroups.onclick = async () => {
   if (firstError) return setAdminState(`❌ Tirage des poules échoué: ${firstError.message}`, true);
   showToast('✅ Poules re-tirées');
   await loadPublic();
-};
+  };
+}
 
-els.generatePlayoffs.onclick = async () => {
+if (els.generatePlayoffs) {
+  els.generatePlayoffs.onclick = async () => {
   if (!(await requireAuthenticatedAdminAction())) return;
   const { data, error } = await supabase.rpc('generate_playoff_matches');
   if (error) return setAdminState(`❌ Génération phase finale impossible: ${error.message}`, true);
   showToast(data || '✅ Phases finales générées');
   await loadPublic();
-};
+  };
+}
 
-els.syncElo.onclick = async () => {
+els.syncElo?.addEventListener('click', async () => {
   if (!(await requireAuthenticatedAdminAction())) return;
   showToast('⏳ Synchronisation ELO en cours...');
   const { error } = await supabase.functions.invoke('sync-player-stats');
   if (error) return setAdminState(`❌ Erreur sync ELO: ${error.message}`, true);
   showToast('✅ ELO Chess.com synchronisé');
   await loadPublic();
-};
+});
 
 els.windowForm.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -1022,7 +960,7 @@ els.windowForm.addEventListener('submit', async (e) => {
   showToast('✅ Intervalle sauvegardé');
 });
 
-els.syncGames.onclick = async () => {
+els.syncGames?.addEventListener('click', async () => {
   if (!(await requireAuthenticatedAdminAction())) return;
   if (!els.windowMatch.value) {
     showToast('⚠️ Choisis un match avant l’import', true);
@@ -1035,13 +973,13 @@ els.syncGames.onclick = async () => {
   if (error) return setAdminState(`❌ Erreur import parties: ${error.message}`, true);
   const imported = Number(data?.imported_games ?? 0);
   const skippedBoards = Number(data?.skipped_boards ?? 0);
-  showToast(`✅ Parties importées (${imported})${skippedBoards ? ` · boards ignorés: ${skippedBoards}` : ''}`);
+  showToast(`✅ Parties importées (${imported})${skippedBoards ? ` · échiquiers ignorés: ${skippedBoards}` : ''}`);
   if (Array.isArray(data?.board_errors) && data.board_errors.length) {
     setAdminState(`⚠️ ${data.board_errors.join(' | ')}`, true);
   }
   await loadAdminGames();
   await loadPublic();
-};
+});
 
 els.overrideForm.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -1062,7 +1000,7 @@ els.overrideForm.addEventListener('submit', async (e) => {
   await loadPublic();
 });
 
-els.refreshPublic.onclick = loadPublic;
+if (els.refreshPublic) els.refreshPublic.onclick = loadPublic;
 els.matchesTabs?.addEventListener('click', (event) => {
   const button = event.target.closest('[data-match-filter]');
   if (!button) return;
