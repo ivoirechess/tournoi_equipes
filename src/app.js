@@ -119,6 +119,51 @@ function cadencePeak(player, cadence = selectedCadence()) {
   return Math.max(Number(peakValue ?? 0), Number(currentValue ?? 0)) || null;
 }
 
+/**
+ * Calcule l'appariement attendu pour un match donné.
+ * Retourne { boards: [{board_no, player_a_id, player_b_id}], errors: [string] }.
+ * Si errors non vide, l'appariement n'est PAS valide pour import.
+ */
+function computeAutoPairing(teamAPlayers, teamBPlayers, cadence) {
+  const errors = [];
+
+  function rosterFor(label, players) {
+    const captain = players.find((p) => p.is_captain);
+    if (!captain) {
+      errors.push(`Équipe ${label}: aucun capitaine désigné.`);
+      return null;
+    }
+    if (players.length < 5) {
+      errors.push(`Équipe ${label}: ${players.length} joueur(s), 5 minimum requis.`);
+      return null;
+    }
+    const others = players
+      .filter((p) => p.id !== captain.id)
+      .slice()
+      .sort((a, b) => {
+        const pa = Number(cadencePeak(a, cadence) || 0);
+        const pb = Number(cadencePeak(b, cadence) || 0);
+        if (pb !== pa) return pb - pa;
+        return (a.display_name || '').localeCompare(b.display_name || '');
+      })
+      .slice(0, 4);
+    return [captain, ...others];
+  }
+
+  const lineupA = rosterFor('A', teamAPlayers);
+  const lineupB = rosterFor('B', teamBPlayers);
+  if (errors.length) return { boards: [], errors };
+
+  const boards = [1, 2, 3, 4, 5].map((boardNo, i) => ({
+    board_no: boardNo,
+    player_a_id: lineupA[i].id,
+    player_b_id: lineupB[i].id,
+    player_a: lineupA[i],
+    player_b: lineupB[i],
+  }));
+  return { boards, errors: [] };
+}
+
 function updatePlayersSortLabels() {
   const label = CADENCE_LABELS[selectedCadence()];
   if (!els.playersSort) return;
@@ -1130,27 +1175,30 @@ els.scheduleForm?.addEventListener('submit', async (e) => {
 
 els.windowMatch?.addEventListener('change', refreshBoardsManager);
 
-function playerOptionMarkup(player) {
-  return `<option value="${player.id}">${player.display_name}${player.is_captain ? ' 👑' : ''}${player.chess_username ? ` (${player.chess_username})` : ''}</option>`;
+function formatPairingPlayer(player, cadence) {
+  const display = player?.display_name || 'Joueur inconnu';
+  const username = player?.chess_username ? `@${player.chess_username}` : '@n/a';
+  const peak = Number(cadencePeak(player, cadence) || 0);
+  const captain = player?.is_captain ? ' · 👑 Capitaine' : '';
+  return `<div class="board-player"><strong>${display}</strong><small>${username} · Peak ${cadence} ${peak}${captain}</small></div>`;
 }
 
-function renderBoardCard(board, optsA, optsB, games, match) {
-  const hasPairing = Boolean(board.player_a_id && board.player_b_id);
+function renderBoardCard(board, games, match, cadence, canImport = true) {
   const matchWindow = [match.match_started_at, match.match_ended_at].filter(Boolean).map((iso) => new Date(iso).toLocaleString('fr-FR')).join(' → ');
-  return `<article class="board-card ${hasPairing ? 'has-pairing' : 'no-pairing'}">
+  return `<article class="board-card has-pairing">
     <div class="board-card-head">
       <h5>Échiquier ${board.board_no}</h5>
-      ${board.board_no === 1 ? '<span class="badge">👑 Échiquier capitaine ×2 pts</span>' : ''}
+      ${board.board_no === 1 ? '<span class="badge">👑 Échiquier capitaine (×2 pts)</span>' : ''}
     </div>
-    <form data-pairing-form data-match-id="${match.id}" data-board-no="${board.board_no}" class="board-pairing">
-      <label>Joueur équipe A<select name="player_a_id"><option value="">— Choisir —</option>${optsA.map(playerOptionMarkup).join('')}</select></label>
-      <label>Joueur équipe B<select name="player_b_id"><option value="">— Choisir —</option>${optsB.map(playerOptionMarkup).join('')}</select></label>
-      <div class="board-actions">
-        <button type="submit" class="btn">💾 Enregistrer</button>
-        <button type="button" class="btn primary" data-import-board data-match-id="${match.id}" data-board-no="${board.board_no}" ${hasPairing ? '' : 'disabled'}>⬇️ Importer parties</button>
-        ${games.length ? `<button type="button" class="btn danger-btn" data-clear-board data-match-id="${match.id}" data-board-no="${board.board_no}">🗑️ Supprimer parties</button>` : ''}
-      </div>
-    </form>
+    <div class="board-pairing-display">
+      ${formatPairingPlayer(board.player_a, cadence)}
+      <div class="board-vs">vs</div>
+      ${formatPairingPlayer(board.player_b, cadence)}
+    </div>
+    ${canImport ? `<div class="board-actions">
+      <button type="button" class="btn primary" data-import-board data-match-id="${match.id}" data-board-no="${board.board_no}">⬇️ Importer parties</button>
+      ${games.length ? `<button type="button" class="btn danger-btn" data-clear-board data-match-id="${match.id}" data-board-no="${board.board_no}">🗑️ Supprimer parties</button>` : ''}
+    </div>` : ''}
     <div class="board-games">
       <div><b>Parties (${games.length})</b> · Sous-score: ${Number(board.game_points_a || 0)} - ${Number(board.game_points_b || 0)} · Board points: ${Number(board.board_points_a || 0)} - ${Number(board.board_points_b || 0)}</div>
       ${matchWindow ? `<small class="muted">Fenêtre: ${matchWindow}</small>` : ''}
@@ -1179,7 +1227,7 @@ async function refreshBoardsManager() {
   state.matchBoards = normalizedBoards;
   const teamIds = [match.team_a_id, match.team_b_id].filter(Boolean);
   const { data: roster } = await supabase.from('players')
-    .select('id,display_name,chess_username,team_id,is_captain')
+    .select('id,display_name,chess_username,team_id,is_captain,rapid_rating,blitz_rating,bullet_rating,peak_rapid,peak_blitz,peak_bullet')
     .in('team_id', teamIds)
     .order('is_captain', { ascending: false }).order('display_name');
   const playersByTeam = new Map();
@@ -1191,35 +1239,24 @@ async function refreshBoardsManager() {
   const gamesByBoard = new Map();
   for (let n = 1; n <= 5; n += 1) gamesByBoard.set(n, []);
   for (const g of games || []) gamesByBoard.get(g.board_no)?.push(g);
-  els.boardsManager.innerHTML = `<div class="boards-grid">${normalizedBoards.map((board) => renderBoardCard(
-    board,
-    playersByTeam.get(match.team_a_id) || [],
-    playersByTeam.get(match.team_b_id) || [],
+  const cadence = selectedCadence();
+  const teamA = (playersByTeam.get(match.team_a_id) || []).slice();
+  const teamB = (playersByTeam.get(match.team_b_id) || []).slice();
+  const pairing = computeAutoPairing(teamA, teamB, cadence);
+  state.computedPairing = pairing;
+  const boardMeta = new Map(normalizedBoards.map((b) => [Number(b.board_no), b]));
+  const warning = pairing.errors.length ? `<div class="pairing-warning"><strong>❌ Appariement bloqué :</strong><ul>${pairing.errors.map((e) => `<li>${e}</li>`).join('')}</ul></div>` : '';
+  const importAll = pairing.errors.length ? '' : `<div class="board-actions"><button type="button" class="btn primary" data-import-all data-match-id="${match.id}">⬇️ Importer tous les échiquiers</button></div>`;
+  els.boardsManager.innerHTML = `${warning}${importAll}<div class="boards-grid">${pairing.boards.map((board) => renderBoardCard(
+    { ...boardMeta.get(board.board_no), ...board },
     gamesByBoard.get(board.board_no) || [],
     match,
+    cadence,
+    pairing.errors.length === 0,
   )).join('')}</div>`;
-  for (const form of els.boardsManager.querySelectorAll('[data-pairing-form]')) {
-    if (form.elements.player_a_id) form.elements.player_a_id.value = form.closest('.board-card') ? String((normalizedBoards.find((b) => Number(b.board_no) === Number(form.dataset.boardNo))?.player_a_id || '')) : '';
-    if (form.elements.player_b_id) form.elements.player_b_id.value = form.closest('.board-card') ? String((normalizedBoards.find((b) => Number(b.board_no) === Number(form.dataset.boardNo))?.player_b_id || '')) : '';
-    form.addEventListener('submit', onSavePairing);
-  }
   for (const btn of els.boardsManager.querySelectorAll('[data-import-board]')) btn.addEventListener('click', onImportBoard);
+  for (const btn of els.boardsManager.querySelectorAll('[data-import-all]')) btn.addEventListener('click', () => onImportAllBoards(matchId));
   for (const btn of els.boardsManager.querySelectorAll('[data-clear-board]')) btn.addEventListener('click', onClearBoard);
-}
-
-async function onSavePairing(e) {
-  e.preventDefault();
-  if (!(await requireAuthenticatedAdminAction())) return;
-  const form = e.currentTarget;
-  const matchId = Number(form.dataset.matchId);
-  const boardNo = Number(form.dataset.boardNo);
-  const playerAId = form.elements.player_a_id.value ? Number(form.elements.player_a_id.value) : null;
-  const playerBId = form.elements.player_b_id.value ? Number(form.elements.player_b_id.value) : null;
-  if (playerAId && playerBId && playerAId === playerBId) return void showToast('⚠️ Les deux joueurs doivent être différents.', true);
-  const { error } = await supabase.from('match_boards').update({ player_a_id: playerAId, player_b_id: playerBId }).eq('match_id', matchId).eq('board_no', boardNo);
-  if (error) return setAdminState(`❌ ${error.message}`, true);
-  showToast(`✅ Appariement échiquier ${boardNo} enregistré`);
-  await refreshBoardsManager();
 }
 
 async function onImportBoard(e) {
@@ -1227,10 +1264,25 @@ async function onImportBoard(e) {
   const btn = e.currentTarget;
   const matchId = Number(btn.dataset.matchId);
   const boardNo = Number(btn.dataset.boardNo);
+  const expected = state.computedPairing?.boards?.find((b) => b.board_no === boardNo);
+  if (!expected) {
+    setAdminState(`❌ Appariement non calculé pour l'échiquier ${boardNo}.`, true);
+    return;
+  }
   btn.disabled = true;
   btn.textContent = '⏳ Import...';
+  const { error: pairingError } = await supabase.from('match_boards')
+    .update({ player_a_id: expected.player_a_id, player_b_id: expected.player_b_id })
+    .eq('match_id', matchId)
+    .eq('board_no', boardNo);
+  if (pairingError) {
+    setAdminState(`❌ Sauvegarde appariement: ${pairingError.message}`, true);
+    btn.disabled = false;
+    btn.textContent = '⬇️ Importer parties';
+    return;
+  }
   const { data, error } = await supabase.functions.invoke('sync-chess-games', {
-    body: { match_id: matchId, board_no: boardNo, max_games: 4, time_class: 'rapid' },
+    body: { match_id: matchId, board_no: boardNo, max_games: 4, time_class: selectedCadence() },
   });
   if (error || !data?.ok) {
     setAdminState(`❌ ${error?.message || data?.error || 'Import échoué'}`, true);
@@ -1240,6 +1292,39 @@ async function onImportBoard(e) {
   }
   const n = Number(data.imported_games || 0);
   showToast(n > 0 ? `✅ ${n} partie(s) importée(s)` : '⚠️ Aucune partie trouvée dans la fenêtre', n === 0);
+  await refreshBoardsManager();
+  await loadAdminGames();
+  await loadPublic();
+}
+
+async function onImportAllBoards(matchId) {
+  if (!(await requireAuthenticatedAdminAction())) return;
+  if (!window.confirm('Importer les parties pour les 5 échiquiers ?')) return;
+  if (!state.computedPairing?.boards?.length || state.computedPairing.errors?.length) {
+    setAdminState('❌ Appariement indisponible pour import global.', true);
+    return;
+  }
+  const updates = state.computedPairing.boards.map((b) => supabase.from('match_boards')
+    .update({ player_a_id: b.player_a_id, player_b_id: b.player_b_id })
+    .eq('match_id', matchId)
+    .eq('board_no', b.board_no));
+  const results = await Promise.all(updates);
+  const firstPairingError = results.find((r) => r.error)?.error;
+  if (firstPairingError) {
+    setAdminState(`❌ ${firstPairingError.message}`, true);
+    return;
+  }
+  let totalImported = 0;
+  const errors = [];
+  for (const board of state.computedPairing.boards) {
+    const { data, error } = await supabase.functions.invoke('sync-chess-games', {
+      body: { match_id: matchId, board_no: board.board_no, max_games: 4, time_class: selectedCadence() },
+    });
+    if (error || !data?.ok) errors.push(`Éch.${board.board_no}: ${error?.message || data?.error}`);
+    else totalImported += Number(data.imported_games || 0);
+  }
+  if (errors.length) setAdminState(`⚠️ ${totalImported} partie(s) importée(s). Erreurs: ${errors.join(' | ')}`, true);
+  else showToast(`✅ ${totalImported} partie(s) importée(s) sur les 5 échiquiers`);
   await refreshBoardsManager();
   await loadAdminGames();
   await loadPublic();
@@ -1294,12 +1379,13 @@ els.matchesTabs?.addEventListener('click', (event) => {
 els.playersTeamFilter?.addEventListener('change', renderPlayersTable);
 els.playersSort?.addEventListener('change', renderPlayersTable);
 els.playersSearch?.addEventListener('input', renderPlayersTable);
-els.tournamentCadence?.addEventListener('change', () => {
+els.tournamentCadence?.addEventListener('change', async () => {
   state.tournamentCadence = selectedCadence();
   updatePlayersSortLabels();
   renderPlayersTable();
   renderTeamShowcase(state.teams, state.players);
   renderTeamDnD(state.teams, state.players);
+  await refreshBoardsManager();
 });
 els.mobileMenuBtn?.addEventListener('click', () => {
   const expanded = els.mobileMenuBtn.getAttribute('aria-expanded') === 'true';
