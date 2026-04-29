@@ -28,6 +28,12 @@ const els = {
   scheduleMatch: document.getElementById('schedule-match'),
   scheduleAt: document.getElementById('schedule-at'),
   scheduleStatus: document.getElementById('schedule-status'),
+  createMatchForm: document.getElementById('create-match-form'),
+  createMatchPhase: document.getElementById('create-match-phase'),
+  createMatchTeamA: document.getElementById('create-match-team-a'),
+  createMatchTeamB: document.getElementById('create-match-team-b'),
+  createMatchAt: document.getElementById('create-match-at'),
+  bulkCreatePoolMatches: document.getElementById('bulk-create-pool-matches'),
   windowMatch: document.getElementById('window-match'),
   syncGames: document.getElementById('sync-games'),
   adminGames: document.getElementById('admin-games'),
@@ -61,6 +67,7 @@ const state = {
   tournamentCadence: 'rapid',
   matchFilter: 'all',
   matches: [],
+  rawTeams: [],
 };
 
 for (const btn of document.querySelectorAll('.tab-btn')) {
@@ -465,6 +472,10 @@ async function loadPublic() {
   els.playersTeamFilter.innerHTML = teamFilterOptions.join('');
   const options = [`<option value="">Pool joueurs disponibles (sans équipe)</option>`, ...teams.map((t) => `<option value="${t.team_id}">${t.team_name}</option>`)].join('');
   els.playerTeam.innerHTML = options;
+  state.rawTeams = rawTeams || [];
+  const teamSelectOptions = ['<option value="">— Choisir —</option>', ...(rawTeams || []).map((t) => `<option value="${t.id}">${t.name}${t.pool ? ` (Poule ${t.pool})` : ''}</option>`)].join('');
+  if (els.createMatchTeamA) els.createMatchTeamA.innerHTML = teamSelectOptions;
+  if (els.createMatchTeamB) els.createMatchTeamB.innerHTML = teamSelectOptions;
   populateMatchSelectors(matches || []);
   renderTeamDnD(teams || [], players || []);
   renderAdminRosters(teams || [], players || []);
@@ -970,6 +981,89 @@ els.syncElo?.addEventListener('click', async () => {
   const { error } = await supabase.functions.invoke('sync-player-stats');
   if (error) return setAdminState(`❌ Erreur sync ELO: ${error.message}`, true);
   showToast('✅ ELO Chess.com synchronisé');
+  await loadPublic();
+});
+
+
+els.createMatchForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!(await requireAuthenticatedAdminAction())) return;
+  const teamAId = Number(els.createMatchTeamA.value);
+  const teamBId = Number(els.createMatchTeamB.value);
+  if (!teamAId || !teamBId || teamAId === teamBId) {
+    showToast('⚠️ Sélectionne deux équipes différentes.', true);
+    return;
+  }
+  const phase = els.createMatchPhase.value;
+  let pool = null;
+  if (phase === 'group') {
+    const teamA = state.rawTeams?.find((t) => t.id === teamAId);
+    const teamB = state.rawTeams?.find((t) => t.id === teamBId);
+    if (!teamA?.pool || teamA.pool !== teamB?.pool) {
+      showToast('⚠️ Les deux équipes doivent être dans la même poule.', true);
+      return;
+    }
+    pool = teamA.pool;
+  }
+  const scheduledAt = els.createMatchAt?.value ? new Date(els.createMatchAt.value).toISOString() : null;
+
+  const { data: created, error } = await supabase
+    .from('matches')
+    .insert({
+      phase,
+      pool,
+      round_no: 1,
+      team_a_id: teamAId,
+      team_b_id: teamBId,
+      scheduled_at: scheduledAt,
+      status: 'scheduled',
+    })
+    .select('id')
+    .single();
+  if (error) return setAdminState(`❌ Création match impossible: ${error.message}`, true);
+
+  const boards = [1, 2, 3, 4, 5].map((n) => ({ match_id: created.id, board_no: n }));
+  const { error: boardsError } = await supabase.from('match_boards').insert(boards);
+  if (boardsError) showToast(`⚠️ Échiquiers non créés: ${boardsError.message}`, true);
+
+  showToast('✅ Match créé');
+  e.target.reset();
+  await loadPublic();
+});
+
+els.bulkCreatePoolMatches?.addEventListener('click', async () => {
+  if (!(await requireAuthenticatedAdminAction())) return;
+  const teams = state.rawTeams || [];
+  const byPool = new Map();
+  for (const t of teams) {
+    if (!t.pool) continue;
+    if (!byPool.has(t.pool)) byPool.set(t.pool, []);
+    byPool.get(t.pool).push(t);
+  }
+  const toCreate = [];
+  for (const [pool, list] of byPool) {
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        toCreate.push({ phase: 'group', pool, round_no: 1, team_a_id: list[i].id, team_b_id: list[j].id, status: 'scheduled' });
+      }
+    }
+  }
+  if (!toCreate.length) {
+    showToast('⚠️ Aucune équipe avec pool — assigne A/B avant.', true);
+    return;
+  }
+  const { data: existing } = await supabase.from('matches').select('team_a_id,team_b_id,phase').eq('phase', 'group');
+  const existsKey = new Set((existing || []).map((m) => `${Math.min(m.team_a_id, m.team_b_id)}-${Math.max(m.team_a_id, m.team_b_id)}`));
+  const filtered = toCreate.filter((m) => !existsKey.has(`${Math.min(m.team_a_id, m.team_b_id)}-${Math.max(m.team_a_id, m.team_b_id)}`));
+  if (!filtered.length) {
+    showToast('Tous les matchs de poule existent déjà.');
+    return;
+  }
+  const { data: inserted, error } = await supabase.from('matches').insert(filtered).select('id');
+  if (error) return setAdminState(`❌ Génération impossible: ${error.message}`, true);
+  const boards = (inserted || []).flatMap((m) => [1, 2, 3, 4, 5].map((n) => ({ match_id: m.id, board_no: n })));
+  if (boards.length) await supabase.from('match_boards').insert(boards);
+  showToast(`✅ ${filtered.length} matchs créés`);
   await loadPublic();
 });
 

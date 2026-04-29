@@ -266,6 +266,30 @@
           </div>
         </article>
 
+
+        <article class="card admin-module">
+          <div class="module-head">
+            <h3>Créer une rencontre</h3>
+            <p class="muted">Crée un match entre deux équipes (poule, demi ou finale).</p>
+          </div>
+          <form id="create-match-form" class="grid three">
+            <label>Phase
+              <select id="create-match-phase">
+                <option value="group">Poule</option>
+                <option value="semi">Demi-finale</option>
+                <option value="final">Finale</option>
+              </select>
+            </label>
+            <label>Équipe A<select id="create-match-team-a" required></select></label>
+            <label>Équipe B<select id="create-match-team-b" required></select></label>
+            <label>Date & heure (optionnel)<input type="datetime-local" id="create-match-at" /></label>
+            <button type="submit" class="btn primary" style="align-self:flex-end">+ Créer le match</button>
+          </form>
+          <button id="bulk-create-pool-matches" class="btn ghost" style="margin-top:0.6rem">
+            ⚙️ Générer toutes les rencontres de poule manquantes
+          </button>
+        </article>
+
         <article class="card admin-module">
           <div class="module-head">
             <h3>Import parties Chess.com</h3>
