@@ -488,3 +488,30 @@ footer { margin-top: var(--space-3); border-top: 1px solid var(--card-border); p
   font-size: 0.78rem; color: var(--text-muted);
   border-left: 2px solid var(--accent); padding-left: 8px;
 }
+.board-pairing-display {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
+}
+.board-player { display: grid; gap: 2px; }
+.board-player strong { font-size: 0.92rem; }
+.board-player small { color: var(--text-dim); font-size: 0.74rem; }
+.board-vs {
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.pairing-warning {
+  border: 1px solid rgba(255, 108, 119, 0.35);
+  background: rgba(255, 108, 119, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+.pairing-warning ul { margin: 4px 0 0 18px; padding: 0; }
