@@ -292,8 +292,8 @@
 
         <article class="card admin-module">
           <div class="module-head">
-            <h3>Import parties Chess.com</h3>
-            <p class="muted">Importe automatiquement les 4 dernières parties par échiquier pour le match sélectionné.</p>
+            <h3>Planifier un match</h3>
+            <p class="muted">Définis date, statut et fenêtre temporelle pour borner l'import.</p>
           </div>
           <form id="schedule-form" class="grid three" style="margin-bottom:1rem">
             <label>Match<select id="schedule-match"></select></label>
@@ -305,10 +305,30 @@
                 <option value="finished">Terminé</option>
               </select>
             </label>
-            <button type="submit" class="btn primary" style="align-self:flex-end">📅 Planifier le match</button>
+            <label>Début fenêtre import (optionnel)<input type="datetime-local" id="schedule-window-start" /></label>
+            <label>Fin fenêtre import (optionnel)<input type="datetime-local" id="schedule-window-end" /></label>
+            <button type="submit" class="btn primary" style="align-self:flex-end">📅 Enregistrer</button>
           </form>
-          <label style="display:block;margin-bottom:1rem;max-width:360px">Match<select id="window-match"></select></label>
-          <button id="sync-games" class="btn primary">⬇️ Importer les parties (max 4/échiquier)</button>
+          <p class="muted" style="font-size:0.78rem">
+            💡 Si la fenêtre n'est pas définie, l'import prend de <strong>scheduled_at - 1h</strong> à <strong>scheduled_at + 12h</strong>.
+          </p>
+        </article>
+
+        <article class="card admin-module">
+          <div class="module-head">
+            <h3>Import parties Chess.com</h3>
+            <p class="muted">1) Choisis un match. 2) Définis l'appariement. 3) Importe les parties par échiquier.</p>
+          </div>
+
+          <label style="display:block;margin-bottom:1rem;max-width:480px">
+            Match à gérer
+            <select id="window-match"></select>
+          </label>
+
+          <div id="boards-manager" class="boards-manager">
+            <p class="muted">Sélectionne un match pour voir les 5 échiquiers.</p>
+          </div>
+
           <div id="admin-games" class="table-wrap" style="margin-top:1rem"></div>
         </article>
       </section>
