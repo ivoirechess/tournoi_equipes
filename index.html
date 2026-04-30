@@ -31,13 +31,13 @@
 
       <nav id="top-nav" class="top-nav">
         <a href="#public-tab" class="nav-link">Public</a>
-        <a href="#admin-tab" class="nav-link">Admin</a>
+        <a href="#admin-tab" id="admin-nav-link" class="nav-link" hidden>Admin</a>
         <button id="theme-toggle" class="icon-btn" aria-label="Basculer thème">🌙</button>
       </nav>
 
       <nav class="segmented" aria-label="Vue">
         <button data-tab="public" class="tab-btn active">Public</button>
-        <button data-tab="admin" class="tab-btn">Admin</button>
+        <button data-tab="admin" id="admin-tab-btn" class="tab-btn" hidden>Admin</button>
       </nav>
     </header>
 
@@ -56,7 +56,18 @@
             <a class="btn primary" href="#standings-section">Voir le classement</a>
             <a class="btn secondary" href="#matches-section">Voir les matchs</a>
             <a class="btn ghost" href="#bracket-section">Voir le bracket</a>
-            <button class="btn ghost" data-tab-link="admin">Console admin</button>
+            <button class="btn ghost" id="show-admin-login">Connexion admin</button>
+          </div>
+
+          <div id="public-admin-login" class="card card-compact public-admin-login" hidden>
+            <h3>Connexion administrateur</h3>
+            <p class="muted">Connecte-toi pour débloquer l’onglet Admin.</p>
+            <p id="public-auth-state" class="muted">Non connecté</p>
+            <form id="public-auth-form" class="grid two">
+              <label>Email<input type="email" id="public-admin-email" autocomplete="email" required /></label>
+              <label>Mot de passe<input type="password" id="public-admin-password" autocomplete="current-password" required /></label>
+              <button type="submit" class="btn primary full">Se connecter</button>
+            </form>
           </div>
         </div>
         <div class="hero-aside">

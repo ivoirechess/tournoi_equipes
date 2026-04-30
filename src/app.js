@@ -12,6 +12,14 @@ const els = {
   players: document.getElementById('players'),
   authForm: document.getElementById('auth-form'),
   authState: document.getElementById('auth-state'),
+  publicAuthForm: document.getElementById('public-auth-form'),
+  publicAuthState: document.getElementById('public-auth-state'),
+  publicAdminEmail: document.getElementById('public-admin-email'),
+  publicAdminPassword: document.getElementById('public-admin-password'),
+  publicAdminLogin: document.getElementById('public-admin-login'),
+  showAdminLogin: document.getElementById('show-admin-login'),
+  adminNavLink: document.getElementById('admin-nav-link'),
+  adminTabBtn: document.getElementById('admin-tab-btn'),
   adminLogout: document.getElementById('admin-logout'),
   teamForm: document.getElementById('team-form'),
   playerForm: document.getElementById('player-form'),
@@ -81,19 +89,35 @@ const state = {
 
 for (const btn of document.querySelectorAll('.tab-btn')) {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
-    document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById(`${btn.dataset.tab}-tab`).classList.add('active');
+    setActiveTab(btn.dataset.tab);
   });
 }
 
 for (const btn of document.querySelectorAll('[data-tab-link]')) {
   btn.addEventListener('click', () => {
     const tab = btn.dataset.tabLink;
-    document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
-    document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('active', p.id === `${tab}-tab`));
+    setActiveTab(tab);
   });
+}
+
+
+function canAccessAdmin() {
+  return document.body.classList.contains('admin-logged') || state.sharedAdminUnlocked;
+}
+
+function setActiveTab(tab) {
+  if (tab === 'admin' && !canAccessAdmin()) {
+    els.publicAdminLogin?.removeAttribute('hidden');
+    els.publicAuthState && (els.publicAuthState.textContent = 'Connecte-toi pour accéder au volet Admin.');
+    return;
+  }
+  document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('active', p.id === `${tab}-tab`));
+}
+
+async function loginWithCredentials(email, password) {
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  return error;
 }
 
 const badge = (isCaptain) => (isCaptain ? '<span class="badge">👑 Capitaine</span>' : '');
@@ -247,6 +271,13 @@ function updateAdminUI(session) {
       els.authState.style.color = '#ffcd6b';
     }
   }
+  const canSeeAdmin = Boolean(session) || sharedAdmin;
+  els.adminNavLink?.toggleAttribute('hidden', !canSeeAdmin);
+  els.adminTabBtn?.toggleAttribute('hidden', !canSeeAdmin);
+  if (els.publicAuthState) {
+    els.publicAuthState.textContent = canSeeAdmin ? '✅ Connecté, onglet Admin débloqué.' : 'Non connecté';
+  }
+  if (!canSeeAdmin && document.getElementById('admin-tab')?.classList.contains('active')) setActiveTab('public');
   if (els.authForm) {
     const shouldCollapse = (Boolean(session) || sharedAdmin) && isAdmin;
     els.authForm.classList.toggle('collapsed', shouldCollapse);
@@ -1224,6 +1255,58 @@ els.tournamentCadence?.addEventListener('change', async () => {
   renderTeamDnD(state.teams, state.players);
 
 });
+
+
+function initAdminMobileAccordions() {
+  const modules = document.querySelectorAll('#admin-tab .admin-module');
+  modules.forEach((module, index) => {
+    const head = module.querySelector('.module-head');
+    if (!head || module.querySelector('.module-toggle')) return;
+
+    const contentNodes = Array.from(module.children).filter((child) => child !== head);
+    const content = document.createElement('div');
+    content.className = 'module-content';
+    for (const node of contentNodes) content.appendChild(node);
+    module.appendChild(content);
+
+    const title = head.querySelector('h3')?.textContent?.trim() || `Section ${index + 1}`;
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'module-toggle';
+    toggle.setAttribute('aria-expanded', 'true');
+    toggle.setAttribute('aria-controls', `admin-module-content-${index}`);
+    content.id = `admin-module-content-${index}`;
+    toggle.innerHTML = `<h3>${title}</h3><span class="chevron" aria-hidden="true">▾</span>`;
+
+    toggle.addEventListener('click', () => {
+      const collapsed = module.classList.toggle('collapsed');
+      toggle.setAttribute('aria-expanded', String(!collapsed));
+    });
+
+    module.insertBefore(toggle, head);
+  });
+}
+
+
+els.showAdminLogin?.addEventListener('click', () => {
+  els.publicAdminLogin?.toggleAttribute('hidden');
+});
+
+els.publicAuthForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const email = els.publicAdminEmail?.value?.trim();
+  const password = els.publicAdminPassword?.value || '';
+  if (!email || !password) return;
+  const error = await loginWithCredentials(email, password);
+  if (error) {
+    if (els.publicAuthState) els.publicAuthState.textContent = `❌ ${error.message}`;
+    return;
+  }
+  if (els.publicAuthState) els.publicAuthState.textContent = '✅ Connecté, onglet Admin débloqué.';
+  els.publicAuthForm.reset();
+  setActiveTab('admin');
+});
+
 els.mobileMenuBtn?.addEventListener('click', () => {
   const expanded = els.mobileMenuBtn.getAttribute('aria-expanded') === 'true';
   els.mobileMenuBtn.setAttribute('aria-expanded', String(!expanded));
@@ -1243,6 +1326,7 @@ const observer = new IntersectionObserver((entries) => {
 }, { threshold: 0.08 });
 for (const block of document.querySelectorAll('.reveal')) observer.observe(block);
 
+initAdminMobileAccordions();
 applySavedTheme();
 state.tournamentCadence = selectedCadence();
 updatePlayersSortLabels();

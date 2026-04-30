@@ -377,6 +377,37 @@ tr:hover td { background: rgba(124,169,255,0.08); }
 .drag-grip { margin-left: auto; color: var(--text-dim); }
 
 .admin-module { display: grid; gap: 12px; }
+
+
+/* Mobile accordion for admin modules */
+.admin-module { position: relative; }
+.admin-module .module-head { cursor: default; }
+.admin-module .module-toggle {
+  display: none;
+  width: 100%;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.admin-module .module-toggle h3 { margin: 0; }
+.admin-module .module-toggle .chevron {
+  font-size: 0.9rem;
+  color: var(--text-dim);
+  transition: transform 0.2s ease;
+}
+.admin-module.collapsed .module-toggle .chevron { transform: rotate(-90deg); }
+
+@media (max-width: 760px) {
+  .admin-module .module-head { display: none; }
+  .admin-module .module-toggle { display: inline-flex; }
+  .admin-module .module-content { margin-top: 6px; }
+  .admin-module.collapsed .module-content { display: none; }
+}
 .module-head h3 { font-family: var(--font-display); font-size: 1.06rem; margin-bottom: 4px; }
 .danger-zone { border-color: rgba(255, 108, 119, 0.35); background: linear-gradient(180deg, rgba(255,108,119,0.06), rgba(255,255,255,0.01)); }
 .admin-session-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; border: 1px solid var(--card-border); border-radius: var(--radius-sm); padding: 10px 12px; background: rgba(255,255,255,0.03); }
@@ -589,3 +620,5 @@ footer { margin-top: var(--space-3); border-top: 1px solid var(--card-border); p
   .rb-side-b { justify-content: flex-start; }
   .rb-result { text-align: left; }
 }
+
+.public-admin-login { margin-top: 10px; display: grid; gap: 10px; }
