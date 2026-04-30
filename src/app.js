@@ -677,9 +677,9 @@ async function verifyChessComUsernameExists(username) {
   }
 }
 
-async function enrichVisiblePlayersData(players) {
+async function hydratePlayersFromChess(players) {
   const missing = (players || []).filter((player) => player.chess_username && shouldRefreshPlayerStats(player));
-  if (!missing.length) return;
+  if (!missing.length) return false;
   const batchSize = 8;
   for (let index = 0; index < missing.length; index += batchSize) {
     const batch = missing.slice(index, index + batchSize);
@@ -700,6 +700,12 @@ async function enrichVisiblePlayersData(players) {
       }),
     );
   }
+  return true;
+}
+
+async function enrichVisiblePlayersData(players) {
+  const changed = await hydratePlayersFromChess(players);
+  if (!changed) return;
   renderPlayersTable();
   renderTeamShowcase(state.teams, state.players);
   renderTeamDnD(state.teams, state.players);
@@ -958,6 +964,8 @@ async function loadResultsForMatch(matchId) {
     .select('id,display_name,chess_username,avatar_url,team_id,is_captain,rapid_rating,blitz_rating,bullet_rating,peak_rapid,peak_blitz,peak_bullet')
     .in('team_id', [match.team_a_id, match.team_b_id]);
 
+  await hydratePlayersFromChess(roster || []);
+
   const byTeam = new Map([[match.team_a_id, []], [match.team_b_id, []]]);
   (roster || []).forEach((player) => byTeam.get(player.team_id)?.push(player));
 
@@ -1120,13 +1128,17 @@ els.resetAllResults?.addEventListener('click', async () => {
 
   const { error: boardsError } = await supabase
     .from('match_boards')
-    .update({ game_points_a: null, game_points_b: null });
+    .update({ game_points_a: null, game_points_b: null })
+    .not('match_id', 'is', null);
   if (boardsError) {
     showToast(`❌ ${boardsError.message}`);
     return;
   }
 
-  const { error: statusError } = await supabase.from('matches').update({ status: 'scheduled' });
+  const { error: statusError } = await supabase
+    .from('matches')
+    .update({ status: 'scheduled' })
+    .not('id', 'is', null);
   if (statusError) {
     showToast(`❌ ${statusError.message}`);
     return;
