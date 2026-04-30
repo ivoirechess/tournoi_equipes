@@ -160,6 +160,8 @@ img {
 }
 
 .event-hero {
+  position: relative;
+  overflow: hidden;
   border-radius: var(--radius-xl);
   border: 1px solid rgba(245, 180, 59, 0.25);
   background: linear-gradient(145deg, rgba(14, 23, 41, 0.95), rgba(8, 12, 22, 0.92));
@@ -169,6 +171,28 @@ img {
   gap: 20px;
   grid-template-columns: minmax(0, 1fr) 280px;
 }
+.hero-chess-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(255,130,0,0.08) 25%, transparent 25% 50%, rgba(0,158,96,0.12) 50% 75%, transparent 75%),
+    linear-gradient(rgba(255,255,255,0.04) 25%, transparent 25% 50%, rgba(0,0,0,0.12) 50% 75%, transparent 75%);
+  background-size: 96px 96px, 96px 96px;
+  opacity: 0.35;
+  animation: chessDrift 18s linear infinite;
+  pointer-events: none;
+}
+@keyframes chessDrift { to { background-position: 96px 96px, -96px -96px; } }
+.event-hero > * { position: relative; z-index: 1; }
+.champion-highlight {
+  display: inline-flex; align-items: center; gap: 10px;
+  border: 1px solid rgba(255,130,0,0.35);
+  background: rgba(0,0,0,0.25);
+  border-radius: 999px; padding: 6px 10px;
+}
+.champion-avatar { width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #FF8200, #009E60); color: #fff; }
+.champion-badge { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: #fff; background: linear-gradient(135deg,#FF8200,#009E60); border-radius: 999px; padding: 4px 8px; animation: pulseBadge 1.8s ease infinite; }
+@keyframes pulseBadge { 50% { transform: scale(1.06); } }
 
 .hero-main { display: grid; gap: 12px; }
 .eyebrow {
@@ -282,6 +306,9 @@ a:focus-visible {
 .card-secondary { background: var(--card-secondary); }
 .card-compact { padding: 12px; border-radius: var(--radius-md); }
 .section-wrapper { display: grid; gap: 10px; }
+.section-wrapper.collapsible .section-body { display: grid; gap: 10px; }
+.section-toggle { margin-left: auto; }
+.section-wrapper.collapsed .section-body { display: none; }
 
 .stats-grid {
   display: grid;
@@ -433,6 +460,17 @@ body.admin-logged #admin-logout { display: inline-flex; }
   transition: var(--transition);
 }
 .toast.show { transform: translateY(0) scale(1); opacity: 1; }
+.modal[hidden] { display: none; }
+.modal { position: fixed; inset: 0; z-index: 998; display: grid; place-items: center; }
+.modal-backdrop { position: absolute; inset: 0; background: rgba(5,10,20,.72); }
+.modal-panel { position: relative; z-index: 1; width: min(680px, 92vw); }
+.modal-close { position: absolute; top: 10px; right: 10px; }
+
+.bracket-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 10px; }
+.bracket-card { border: 1px solid var(--card-border); border-radius: var(--radius-md); padding: 10px; background: rgba(255,255,255,0.03); transition: var(--transition); }
+.bracket-card:hover { border-color: var(--card-border-hover); transform: translateY(-2px); }
+.bracket-preview { margin-top: 8px; font-size: .8rem; color: var(--text-muted); display: none; }
+.bracket-card:hover .bracket-preview { display: block; }
 
 .skeleton { position: relative; min-height: 80px; overflow: hidden; border-radius: var(--radius-sm); background: rgba(255,255,255,0.03); }
 .skeleton::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent); animation: shimmer 1.4s infinite; }

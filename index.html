@@ -43,6 +43,7 @@
 
     <main class="app-main">
       <section class="hero event-hero reveal">
+        <div class="hero-chess-bg" aria-hidden="true"></div>
         <div class="hero-main">
           <p class="eyebrow">IvoireChess · Saison Team Cup</p>
           <div class="hero-status-line">
@@ -50,6 +51,14 @@
             <span class="hero-meta">Finales & classement en direct</span>
           </div>
           <h1 id="hero-title">IvoireChess Team Championship — Champion en titre: <span>yoann565</span></h1>
+          <div class="champion-highlight" aria-live="polite">
+            <span class="champion-avatar" aria-hidden="true">♔</span>
+            <div>
+              <small>Champion en titre</small>
+              <strong id="champion-name">yoann565</strong>
+            </div>
+            <span class="champion-badge">Champion</span>
+          </div>
           <p class="hero-sub" id="hero-format-summary">Format: 6 équipes · 2 poules · 5 échiquiers par match (5-4-3 samedi 19h, 2-1 dimanche 19h).</p>
           <div id="hero-next-match" class="hero-featured-match card card-compact skeleton"></div>
           <div class="hero-actions">
@@ -59,16 +68,6 @@
             <button class="btn ghost" id="show-admin-login">Connexion admin</button>
           </div>
 
-          <div id="public-admin-login" class="card card-compact public-admin-login" hidden>
-            <h3>Connexion administrateur</h3>
-            <p class="muted">Connecte-toi pour débloquer l’onglet Admin.</p>
-            <p id="public-auth-state" class="muted">Non connecté</p>
-            <form id="public-auth-form" class="grid two">
-              <label>Email<input type="email" id="public-admin-email" autocomplete="email" required /></label>
-              <label>Mot de passe<input type="password" id="public-admin-password" autocomplete="current-password" required /></label>
-              <button type="submit" class="btn primary full">Se connecter</button>
-            </form>
-          </div>
         </div>
         <div class="hero-aside">
           <div class="kpi-card">
@@ -353,6 +352,20 @@
         </article>
       </section>
     </main>
+    <div id="login-modal" class="modal" hidden aria-hidden="true">
+      <div class="modal-backdrop" data-close-modal="true"></div>
+      <div class="modal-panel card" role="dialog" aria-modal="true" aria-labelledby="login-modal-title">
+        <button class="icon-btn modal-close" id="close-login-modal" aria-label="Fermer la fenêtre de connexion">✕</button>
+        <h3 id="login-modal-title">Connexion administrateur</h3>
+        <p class="muted">Connecte-toi pour débloquer l’onglet Admin.</p>
+        <p id="public-auth-state" class="muted">Non connecté</p>
+        <form id="public-auth-form" class="grid two">
+          <label>Email<input type="email" id="public-admin-email" autocomplete="email" required /></label>
+          <label>Mot de passe<input type="password" id="public-admin-password" autocomplete="current-password" required /></label>
+          <button type="submit" class="btn primary full">Se connecter</button>
+        </form>
+      </div>
+    </div>
 
     <footer>
       <div>

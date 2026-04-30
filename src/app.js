@@ -18,6 +18,8 @@ const els = {
   publicAdminPassword: document.getElementById('public-admin-password'),
   publicAdminLogin: document.getElementById('public-admin-login'),
   showAdminLogin: document.getElementById('show-admin-login'),
+  loginModal: document.getElementById('login-modal'),
+  closeLoginModal: document.getElementById('close-login-modal'),
   adminNavLink: document.getElementById('admin-nav-link'),
   adminTabBtn: document.getElementById('admin-tab-btn'),
   adminLogout: document.getElementById('admin-logout'),
@@ -539,12 +541,7 @@ async function loadPublic() {
 
   renderMatchesByFilter(matches || []);
 
-  const semis = (matches || []).filter((m) => m.phase === 'semi');
-  const final = (matches || []).find((m) => m.phase === 'final');
-  els.bracket.classList.remove('skeleton');
-  els.bracket.innerHTML = `<p>🏁 Demi 1: ${semis[0]?.team_a?.name || '?'} vs ${semis[0]?.team_b?.name || '?'}</p>
-  <p>🏁 Demi 2: ${semis[1]?.team_a?.name || '?'} vs ${semis[1]?.team_b?.name || '?'}</p>
-  <p>🏆 Finale: ${final?.team_a?.name || '?'} vs ${final?.team_b?.name || '?'}</p>`;
+  renderBracket(matches || [], players || []);
 
   state.teams = teams || [];
   state.players = players || [];
@@ -1287,10 +1284,69 @@ function initAdminMobileAccordions() {
   });
 }
 
+function teamAverageElo(teamId, players, cadence = selectedCadence()) {
+  const roster = (players || []).filter((p) => p.team_id === teamId);
+  const sum = roster.reduce((acc, p) => acc + Number(cadenceRating(p, cadence) || 0), 0);
+  return Math.round(sum / Math.max(1, roster.length));
+}
+
+function renderBracket(matches, players) {
+  const semis = matches.filter((m) => m.phase === 'semi');
+  const final = matches.find((m) => m.phase === 'final');
+  const cards = [
+    { label: 'Demi-finale 1', match: semis[0], icon: '🏁' },
+    { label: 'Demi-finale 2', match: semis[1], icon: '🏁' },
+    { label: 'Finale', match: final, icon: '🏆' },
+  ];
+  els.bracket.classList.remove('skeleton');
+  els.bracket.innerHTML = `<div class="bracket-grid">${cards.map(({ label, match, icon }) => {
+    const teamA = match?.team_a?.name || '?';
+    const teamB = match?.team_b?.name || '?';
+    const eloA = teamAverageElo(match?.team_a_id, players);
+    const eloB = teamAverageElo(match?.team_b_id, players);
+    return `<article class="bracket-card"><h4>${icon} ${label}</h4><p><strong>${teamA}</strong> vs <strong>${teamB}</strong></p><p class="muted">${match?.status || 'scheduled'}</p><div class="bracket-preview">ELO moyen: ${teamA} ${eloA} · ${teamB} ${eloB}</div></article>`;
+  }).join('')}</div>`;
+}
+
+function initSectionCollapsibles() {
+  document.querySelectorAll('.section-wrapper').forEach((section) => {
+    const head = section.querySelector('.section-head');
+    if (!head || section.querySelector('.section-toggle')) return;
+    const bodyNodes = Array.from(section.children).filter((n) => n !== head);
+    const body = document.createElement('div');
+    body.className = 'section-body';
+    bodyNodes.forEach((node) => body.appendChild(node));
+    section.appendChild(body);
+    section.classList.add('collapsible');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn ghost section-toggle';
+    btn.setAttribute('aria-expanded', 'true');
+    btn.textContent = 'Replier';
+    btn.addEventListener('click', () => {
+      const collapsed = section.classList.toggle('collapsed');
+      btn.textContent = collapsed ? 'Déplier' : 'Replier';
+      btn.setAttribute('aria-expanded', String(!collapsed));
+    });
+    head.appendChild(btn);
+  });
+}
+
 
 els.showAdminLogin?.addEventListener('click', () => {
-  els.publicAdminLogin?.toggleAttribute('hidden');
+  if (!els.loginModal) return;
+  els.loginModal.hidden = false;
+  els.loginModal.setAttribute('aria-hidden', 'false');
 });
+els.closeLoginModal?.addEventListener('click', closeLoginModal);
+els.loginModal?.addEventListener('click', (event) => {
+  if (event.target?.dataset?.closeModal) closeLoginModal();
+});
+function closeLoginModal() {
+  if (!els.loginModal) return;
+  els.loginModal.hidden = true;
+  els.loginModal.setAttribute('aria-hidden', 'true');
+}
 
 els.publicAuthForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -1304,6 +1360,7 @@ els.publicAuthForm?.addEventListener('submit', async (event) => {
   }
   if (els.publicAuthState) els.publicAuthState.textContent = '✅ Connecté, onglet Admin débloqué.';
   els.publicAuthForm.reset();
+  closeLoginModal();
   setActiveTab('admin');
 });
 
@@ -1327,6 +1384,7 @@ const observer = new IntersectionObserver((entries) => {
 for (const block of document.querySelectorAll('.reveal')) observer.observe(block);
 
 initAdminMobileAccordions();
+initSectionCollapsibles();
 applySavedTheme();
 state.tournamentCadence = selectedCadence();
 updatePlayersSortLabels();
