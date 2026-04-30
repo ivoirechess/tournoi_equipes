@@ -959,11 +959,14 @@ async function loadResultsForMatch(matchId) {
     .eq('match_id', matchId)
     .order('board_no');
 
-  const { data: roster } = await supabase
-    .from('players')
-    .select('id,display_name,chess_username,avatar_url,team_id,is_captain,rapid_rating,blitz_rating,bullet_rating,peak_rapid,peak_blitz,peak_bullet')
-    .in('team_id', [match.team_a_id, match.team_b_id]);
-
+  let roster = state.players.filter((player) => [match.team_a_id, match.team_b_id].includes(player.team_id));
+  if (!roster.length) {
+    const { data: rosterFromDb } = await supabase
+      .from('players')
+      .select('id,display_name,chess_username,avatar_url,team_id,is_captain,rapid_rating,blitz_rating,bullet_rating,peak_rapid,peak_blitz,peak_bullet')
+      .in('team_id', [match.team_a_id, match.team_b_id]);
+    roster = rosterFromDb || [];
+  }
   await hydratePlayersFromChess(roster || []);
 
   const byTeam = new Map([[match.team_a_id, []], [match.team_b_id, []]]);
@@ -991,6 +994,8 @@ async function loadResultsForMatch(matchId) {
       game_points_b: bmap.get(n)?.game_points_b ?? null,
     })),
     playersById: new Map((roster || []).map((player) => [player.id, player])),
+    teamAPlayers: (byTeam.get(match.team_a_id) || []).slice().sort((a, b) => playerStrengthValue(b) - playerStrengthValue(a)),
+    teamBPlayers: (byTeam.get(match.team_b_id) || []).slice().sort((a, b) => playerStrengthValue(b) - playerStrengthValue(a)),
   };
 
   els.resultsScheduledAt.value = match.scheduled_at ? new Date(match.scheduled_at).toISOString().slice(0, 16) : '';
@@ -1020,11 +1025,23 @@ function renderResultsBoards() {
 
       const playerA = ctx.playersById.get(pair.player_a_id);
       const playerB = ctx.playersById.get(pair.player_b_id);
+      const optionsA = ctx.teamAPlayers
+        .map((p) => `<option value="${p.id}" ${p.id === pair.player_a_id ? 'selected' : ''}>${p.display_name}${p.is_captain ? ' 👑' : ''}</option>`)
+        .join('');
+      const optionsB = ctx.teamBPlayers
+        .map((p) => `<option value="${p.id}" ${p.id === pair.player_b_id ? 'selected' : ''}>${p.display_name}${p.is_captain ? ' 👑' : ''}</option>`)
+        .join('');
       return `<article class="result-board-row ${live.status}">
         <div class="rb-board">#${pair.board_no}</div>
         <div class="rb-player rb-side-a">
           ${avatarHTML(playerA)}
-          <strong>${playerA?.display_name || '—'}</strong>
+          <div>
+            <strong>${playerA?.display_name || '—'}</strong>
+            <select data-pair-a="${pair.board_no}" class="pairing-select">
+              <option value="">— Joueur A —</option>
+              ${optionsA}
+            </select>
+          </div>
         </div>
         <div class="rb-scores-inline">
           <input data-a="${pair.board_no}" type="number" step="0.5" min="0" max="4" value="${score.game_points_a ?? ''}" aria-label="Score joueur A échiquier ${pair.board_no}">
@@ -1032,7 +1049,13 @@ function renderResultsBoards() {
           <input data-b="${pair.board_no}" type="number" step="0.5" min="0" max="4" value="${score.game_points_b ?? ''}" aria-label="Score joueur B échiquier ${pair.board_no}">
         </div>
         <div class="rb-player rb-side-b">
-          <strong>${playerB?.display_name || '—'}</strong>
+          <div>
+            <strong>${playerB?.display_name || '—'}</strong>
+            <select data-pair-b="${pair.board_no}" class="pairing-select">
+              <option value="">— Joueur B —</option>
+              ${optionsB}
+            </select>
+          </div>
           ${avatarHTML(playerB)}
         </div>
         <div class="rb-result ${live.status}">${live.label}</div>
@@ -1057,6 +1080,25 @@ els.resultsBoards?.addEventListener('input', (event) => {
   const value = target.value === '' ? null : Number(target.value);
   if (target.dataset.a) score.game_points_a = Number.isNaN(value) ? null : value;
   if (target.dataset.b) score.game_points_b = Number.isNaN(value) ? null : value;
+  renderResultsBoards();
+});
+
+els.resultsBoards?.addEventListener('change', (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLSelectElement) || !state.resultsContext) return;
+  const boardNo = Number(target.dataset.pairA || target.dataset.pairB);
+  if (!boardNo) return;
+  const pair = state.resultsContext.pairing.find((x) => x.board_no === boardNo);
+  if (!pair) return;
+  const nextPlayerId = target.value ? Number(target.value) : null;
+  if (target.dataset.pairA) pair.player_a_id = nextPlayerId;
+  if (target.dataset.pairB) pair.player_b_id = nextPlayerId;
+
+  const dupA = state.resultsContext.pairing.filter((p) => p.player_a_id && p.player_a_id === pair.player_a_id).length > 1;
+  const dupB = state.resultsContext.pairing.filter((p) => p.player_b_id && p.player_b_id === pair.player_b_id).length > 1;
+  if (dupA || dupB) {
+    showToast('⚠️ Un joueur ne peut pas être apparié sur plusieurs échiquiers.', true);
+  }
   renderResultsBoards();
 });
 
@@ -1126,10 +1168,16 @@ els.resetAllResults?.addEventListener('click', async () => {
     return;
   }
 
+  const allMatchIds = (allMatches || []).map((m) => m.id);
+  if (!allMatchIds.length) {
+    showToast('ℹ️ Aucun match à réinitialiser.');
+    return;
+  }
+
   const { error: boardsError } = await supabase
     .from('match_boards')
     .update({ game_points_a: null, game_points_b: null })
-    .not('match_id', 'is', null);
+    .in('match_id', allMatchIds);
   if (boardsError) {
     showToast(`❌ ${boardsError.message}`);
     return;
@@ -1138,7 +1186,7 @@ els.resetAllResults?.addEventListener('click', async () => {
   const { error: statusError } = await supabase
     .from('matches')
     .update({ status: 'scheduled' })
-    .not('id', 'is', null);
+    .in('id', allMatchIds);
   if (statusError) {
     showToast(`❌ ${statusError.message}`);
     return;
