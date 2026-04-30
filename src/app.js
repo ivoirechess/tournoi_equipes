@@ -107,10 +107,16 @@ function canAccessAdmin() {
   return document.body.classList.contains('admin-logged') || state.sharedAdminUnlocked;
 }
 
+function openLoginModal(message = 'Connecte-toi pour accéder au volet Admin.') {
+  if (!els.loginModal) return;
+  if (els.publicAuthState) els.publicAuthState.textContent = message;
+  els.loginModal.hidden = false;
+  els.loginModal.setAttribute('aria-hidden', 'false');
+}
+
 function setActiveTab(tab) {
   if (tab === 'admin' && !canAccessAdmin()) {
-    els.publicAdminLogin?.removeAttribute('hidden');
-    els.publicAuthState && (els.publicAuthState.textContent = 'Connecte-toi pour accéder au volet Admin.');
+    openLoginModal();
     return;
   }
   document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
@@ -1333,11 +1339,7 @@ function initSectionCollapsibles() {
 }
 
 
-els.showAdminLogin?.addEventListener('click', () => {
-  if (!els.loginModal) return;
-  els.loginModal.hidden = false;
-  els.loginModal.setAttribute('aria-hidden', 'false');
-});
+els.showAdminLogin?.addEventListener('click', () => openLoginModal());
 els.closeLoginModal?.addEventListener('click', closeLoginModal);
 els.loginModal?.addEventListener('click', (event) => {
   if (event.target?.dataset?.closeModal) closeLoginModal();
